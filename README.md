@@ -13,7 +13,7 @@ ln -s ~/my-claude-workspace ~/Downloads/my-claude-workspace
 
 The symlink lets Chrome write outside its default Downloads folder with zero runtime overhead. It will appear as an alias in Finder — that's expected.
 
-If you prefer a different folder name or location, create the folder and symlink accordingly, then update the extension's workspace path in [Settings](#settings).
+> **Non-default download folder?** If Chrome is configured to download somewhere other than `~/Downloads`, use that path instead. The Options page will show you the exact command to run once you've entered your paths.
 
 **2. Load the extension:**
 
@@ -35,6 +35,9 @@ Right-click the extension icon → **Options** (or go to `chrome://extensions` �
 
 | Setting | Default | Description |
 |---|---|---|
-| Workspace folder | `my-claude-workspace` | Path relative to Chrome's download directory where PDFs are saved. Use forward slashes for subfolders, e.g. `Work/claude-cases`. Leave blank to save directly into the download directory. |
+| Browser download directory | `~/Downloads` | The folder Chrome saves files to — check Chrome **Settings → Downloads → Location**. Used only to display the full resolved path and generate the setup command; Chrome controls the actual location. |
+| Workspace folder | `my-claude-workspace` | Subfolder within the download directory where PDFs are saved. Use forward slashes for nested paths, e.g. `Work/claude-cases`. Leave blank to save directly into the download directory. |
+
+The Options page shows a live **"Files will save to:"** preview and the exact `mkdir`/`ln` command for your machine's paths.
 
 Settings sync across Chrome profiles via `chrome.storage.sync`.

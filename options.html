@@ -6,13 +6,24 @@
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      max-width: 520px;
+      max-width: 560px;
       margin: 40px auto;
       padding: 0 20px;
       color: #222;
     }
     h1 { font-size: 1.3em; margin-bottom: 4px; }
-    .subtitle { color: #666; font-size: 0.9em; margin-bottom: 28px; }
+    .subtitle { color: #666; font-size: 0.9em; margin-bottom: 20px; }
+    .warning {
+      font-size: 0.83em;
+      background: #fff8e6;
+      border: 1px solid #e6c84a;
+      border-radius: 4px;
+      padding: 9px 12px;
+      margin-bottom: 24px;
+      color: #5a4500;
+      line-height: 1.5;
+    }
+    .field { margin-bottom: 22px; }
     label { display: block; font-weight: 600; margin-bottom: 6px; }
     input[type="text"] {
       width: 100%;
@@ -28,11 +39,35 @@
       margin-top: 6px;
       line-height: 1.5;
     }
-    .hint code {
+    .hint code, .preview code {
       background: #f0f0f0;
       padding: 1px 4px;
       border-radius: 3px;
       font-size: 0.95em;
+    }
+    .preview {
+      margin-top: 4px;
+      padding: 14px 16px;
+      background: #f8f8f8;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      font-size: 0.88em;
+      line-height: 1.8;
+    }
+    .preview strong { display: inline-block; min-width: 130px; color: #444; }
+    .setup-cmd {
+      margin-top: 10px;
+      font-size: 0.82em;
+      color: #555;
+    }
+    .setup-cmd code {
+      display: block;
+      margin-top: 4px;
+      background: #f0f0f0;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 1em;
+      word-break: break-all;
     }
     .actions { margin-top: 24px; display: flex; align-items: center; gap: 12px; }
     button {
@@ -53,15 +88,37 @@
   <h1>Send to Claude — Settings</h1>
   <p class="subtitle">Configure where case PDFs are saved.</p>
 
-  <div style="margin-bottom: 24px;">
-    <label for="workspaceFolder">Workspace folder</label>
+  <p class="warning">
+    <strong>Most users should leave these at their defaults.</strong>
+    Changing them requires manually re-running the Terminal setup command below.
+    If your symlink and download folder get out of sync, PDFs will not reach your Claude workspace.
+  </p>
+
+  <div class="field">
+    <label for="downloadDirectory">Your browser's configured download folder</label>
+    <input type="text" id="downloadDirectory" placeholder="~/Downloads" />
+    <p class="hint">
+      Enter the path that matches what's set in Chrome <strong>Settings → Downloads → Location</strong>.
+      This extension cannot read or change that setting — this field must be kept in sync manually.
+    </p>
+  </div>
+
+  <div class="field">
+    <label for="workspaceFolder">Workspace subfolder</label>
     <input type="text" id="workspaceFolder" placeholder="my-claude-workspace" />
     <p class="hint">
-      Path <strong>relative to your browser's default download directory</strong>.<br>
-      Example: <code>my-claude-workspace</code> saves to <code>~/Downloads/my-claude-workspace/</code>.<br>
-      Use forward slashes for subfolders, e.g. <code>Documents/claude-cases</code>.<br>
-      To land files directly in your download directory, leave this blank.
+      Folder created <strong>inside</strong> your download folder where PDFs land.
+      Use forward slashes for nested paths, e.g. <code>Work/claude-cases</code>.
+      Leave blank to save directly into the download folder.
     </p>
+  </div>
+
+  <div class="preview">
+    <div><strong>Files will save to:</strong> <code id="previewPath"></code></div>
+    <div class="setup-cmd" id="symlinkSection">
+      <strong>One-time Terminal setup</strong> — run this to route files to your Claude workspace:
+      <code id="symlinkCmd"></code>
+    </div>
   </div>
 
   <div class="actions">

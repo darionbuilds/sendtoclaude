@@ -12,9 +12,12 @@ Pure vanilla JavaScript — no package.json, bundler, or compilation. Load unpac
 
 ## Configuration
 
-An options page (`options.html` + `options.js`) lets users configure:
+An options page (`options.html` + `options.js`) lets users configure two settings stored in `chrome.storage.sync`:
 
-- **Workspace folder** — the subfolder path relative to Chrome's default download directory where PDFs are saved (default: `my-claude-workspace`). Stored in `chrome.storage.sync` so it syncs across Chrome profiles.
+- **Browser download directory** (default: `~/Downloads`) — where Chrome saves files. Chrome provides no API to read this programmatically, so the user enters it manually from Chrome Settings → Downloads → Location. Used only for the live path preview and symlink command; it does not affect the actual download (Chrome controls that).
+- **Workspace folder** (default: `my-claude-workspace`) — subfolder relative to the download directory where PDFs land. This is the only value `background.js` uses.
+
+The options page shows a live **"Files will save to:"** preview combining both values, and a ready-to-run `mkdir`/`ln -s` setup command that adapts to the user's actual paths.
 
 Access via right-click extension icon → Options, or `chrome://extensions` → Details → Extension options.
 
@@ -33,8 +36,9 @@ Three scripts plus an options page; scripts communicate via Chrome message passi
 - Tracks in-flight downloads in `pendingDownloads` (Map of downloadId → tabId) to forward async interruption errors back to the content script
 
 **`options.html` / `options.js`** — settings UI
-- Persists `workspaceFolder` to `chrome.storage.sync` with `my-claude-workspace` as the default
-- Sanitizes input: strips leading/trailing slashes, normalizes backslashes to forward slashes
+- Persists `downloadDirectory` (default: `~/Downloads`) and `workspaceFolder` (default: `my-claude-workspace`) to `chrome.storage.sync`
+- Sanitizes input: strips trailing slashes, normalizes backslashes to forward slashes
+- Shows a live "Files will save to:" preview and a generated `mkdir`/`ln -s` setup command as both fields change
 
 **Why the split:** content scripts cannot access `chrome.downloads`; only the service worker can.
 
@@ -44,4 +48,4 @@ Content script runs on four `https://support.servicenow.com/` patterns covering 
 
 ## Workspace Path
 
-The download path is relative to Chrome's default download directory. The README setup uses a symlink: `~/Downloads/my-claude-workspace` → `~/my-claude-workspace`, so files land in `~/my-claude-workspace/`. Users can configure a different folder name or subfolder path via the extension's Options page.
+Chrome extensions cannot read or change the browser's configured download directory — `chrome.downloads.download()` filenames are always relative to it. The `downloadDirectory` setting exists only for display purposes (path preview + symlink command generation). The `workspaceFolder` setting is the only value passed to `chrome.downloads.download()`. The README symlink setup routes the download subfolder to the actual Claude workspace on disk.
