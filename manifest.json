@@ -3,7 +3,8 @@
   "name": "Send to Claude",
   "version": "1.0",
   "description": "One-click download of ServiceNow case PDF into Claude workspace",
-  "permissions": ["downloads"],
+  "permissions": ["downloads", "storage"],
+  "options_page": "options.html",
   "host_permissions": ["https://support.servicenow.com/*"],
   "background": {
     "service_worker": "background.js"

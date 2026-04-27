@@ -1,3 +1,5 @@
+const DEFAULTS = { workspaceFolder: 'my-claude-workspace' };
+
 // Maps downloadId → tabId for in-flight downloads initiated by this extension
 const pendingDownloads = new Map();
 
@@ -7,19 +9,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const { sysId, tableName, caseNum } = message;
   const tabId = sender.tab?.id;
   const pdfUrl = `https://support.servicenow.com/${tableName}.do?PDF&sys_id=${sysId}`;
-  const filename = caseNum ? `my-claude-workspace/${caseNum}.pdf` : undefined;
 
-  chrome.downloads.download(
-    { url: pdfUrl, saveAs: false, conflictAction: 'uniquify', filename },
-    (downloadId) => {
-      if (chrome.runtime.lastError || downloadId === undefined) {
-        sendResponse({ success: false, error: chrome.runtime.lastError?.message ?? 'Download failed to start' });
-      } else {
-        if (tabId !== undefined) pendingDownloads.set(downloadId, tabId);
-        sendResponse({ success: true });
+  chrome.storage.sync.get(DEFAULTS, ({ workspaceFolder }) => {
+    const folder = workspaceFolder.trim().replace(/\/+$/, '');
+    const filename = caseNum
+      ? (folder ? `${folder}/${caseNum}.pdf` : `${caseNum}.pdf`)
+      : undefined;
+
+    chrome.downloads.download(
+      { url: pdfUrl, saveAs: false, conflictAction: 'uniquify', filename },
+      (downloadId) => {
+        if (chrome.runtime.lastError || downloadId === undefined) {
+          sendResponse({ success: false, error: chrome.runtime.lastError?.message ?? 'Download failed to start' });
+        } else {
+          if (tabId !== undefined) pendingDownloads.set(downloadId, tabId);
+          sendResponse({ success: true });
+        }
       }
-    }
-  );
+    );
+  });
 
   return true; // keep message channel open for async response
 });
