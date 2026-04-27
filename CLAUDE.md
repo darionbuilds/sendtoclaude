@@ -14,10 +14,10 @@ Pure vanilla JavaScript — no package.json, bundler, or compilation. Load unpac
 
 An options page (`options.html` + `options.js`) lets users configure two settings stored in `chrome.storage.sync`:
 
-- **Browser download directory** (default: `~/Downloads`) — where Chrome saves files. Chrome provides no API to read this programmatically, so the user enters it manually from Chrome Settings → Downloads → Location. Used only for the live path preview and symlink command; it does not affect the actual download (Chrome controls that).
-- **Workspace folder** (default: `my-claude-workspace`) — subfolder relative to the download directory where PDFs land. This is the only value `background.js` uses.
+- **Your browser's configured download folder** (default: `~/Downloads`) — must match what Chrome already has set in Settings → Downloads → Location. Chrome provides no API to read this programmatically, so the user enters it manually. Used only for the live path preview and symlink command; it does not affect the actual download (Chrome controls that).
+- **Workspace subfolder** (default: `my-claude-workspace`) — subfolder relative to the download directory where PDFs land. This is the only value `background.js` uses.
 
-The options page shows a live **"Files will save to:"** preview combining both values, and a ready-to-run `mkdir`/`ln -s` setup command that adapts to the user's actual paths.
+The options page warns that most users should leave defaults unchanged — deviating requires manually re-running the setup command, and a mismatch between the symlink and the configured paths will silently break delivery. It shows a live **"Files will save to:"** preview combining both values, and a ready-to-run `mkdir`/`ln -s` setup command that adapts to the user's actual paths.
 
 Access via right-click extension icon → Options, or `chrome://extensions` → Details → Extension options.
 

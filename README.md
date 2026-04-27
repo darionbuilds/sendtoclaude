@@ -33,11 +33,13 @@ Click **Send to Claude** on any case or task. The PDF will appear in your config
 
 Right-click the extension icon → **Options** (or go to `chrome://extensions` → Details → Extension options).
 
+> **Most users should leave these at their defaults.** Changing them requires manually re-running the Terminal setup command. If your symlink and download folder get out of sync, PDFs will not reach your Claude workspace.
+
 | Setting | Default | Description |
 |---|---|---|
-| Browser download directory | `~/Downloads` | The folder Chrome saves files to — check Chrome **Settings → Downloads → Location**. Used only to display the full resolved path and generate the setup command; Chrome controls the actual location. |
-| Workspace folder | `my-claude-workspace` | Subfolder within the download directory where PDFs are saved. Use forward slashes for nested paths, e.g. `Work/claude-cases`. Leave blank to save directly into the download directory. |
+| Your browser's configured download folder | `~/Downloads` | Must match what's set in Chrome **Settings → Downloads → Location**. This extension cannot read or change that setting — keep this field in sync manually. Used only to display the full resolved path and generate the setup command. |
+| Workspace subfolder | `my-claude-workspace` | Folder created inside your download folder where PDFs land. Use forward slashes for nested paths, e.g. `Work/claude-cases`. Leave blank to save directly into the download folder. |
 
-The Options page shows a live **"Files will save to:"** preview and the exact `mkdir`/`ln` command for your machine's paths.
+The Options page shows a live **"Files will save to:"** preview and a one-time Terminal setup command that updates as you type.
 
 Settings sync across Chrome profiles via `chrome.storage.sync`.
