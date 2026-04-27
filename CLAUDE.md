@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A Chrome MV3 extension that adds a "Send to Claude" button to ServiceNow case and task forms. Clicking the button downloads the case as a PDF into a configurable workspace folder (default: `~/my-claude-workspace/`), named by case number (e.g. `CS0001234.pdf`).
+A Chrome MV3 extension that adds a "Send to Claude" button to ServiceNow case and task forms. Clicking the button downloads the case as a PDF into a configurable workspace folder (default: `~/Documents/my-claude-workspace/`), named by case number (e.g. `CS0001234.pdf`).
 
 ## No Build Step
 
@@ -38,7 +38,7 @@ Three scripts plus an options page; scripts communicate via Chrome message passi
 **`options.html` / `options.js`** — settings UI
 - Persists `downloadDirectory` (default: `~/Downloads`) and `workspaceFolder` (default: `my-claude-workspace`) to `chrome.storage.sync`
 - Sanitizes input: strips trailing slashes, normalizes backslashes to forward slashes
-- Shows a live "Files will save to:" preview and a generated `mkdir`/`ln -s` setup command as both fields change
+- Shows a live "Files will save to:" preview and a generated `mkdir`/`ln -s` setup command as both fields change; the symlink target is always `~/Documents/{workspaceFolder}`, reflecting the standard KB-prescribed workspace location
 
 **Why the split:** content scripts cannot access `chrome.downloads`; only the service worker can.
 
@@ -48,4 +48,4 @@ Content script runs on four `https://support.servicenow.com/` patterns covering 
 
 ## Workspace Path
 
-Chrome extensions cannot read or change the browser's configured download directory — `chrome.downloads.download()` filenames are always relative to it. The `downloadDirectory` setting exists only for display purposes (path preview + symlink command generation). The `workspaceFolder` setting is the only value passed to `chrome.downloads.download()`. The README symlink setup routes the download subfolder to the actual Claude workspace on disk.
+Chrome extensions cannot read or change the browser's configured download directory — `chrome.downloads.download()` filenames are always relative to it. The `downloadDirectory` setting exists only for display purposes (path preview + symlink command generation). The `workspaceFolder` setting is the only value passed to `chrome.downloads.download()`. The README symlink setup routes the download subfolder to the Claude workspace in `~/Documents/`.

@@ -29,9 +29,7 @@ function updatePreview() {
   const symlinkCmd = document.getElementById('symlinkCmd');
 
   if (folder) {
-    // Suggest a symlink from the download subfolder to ~/my-claude-workspace
-    // (user may want a different target, but this matches the README convention)
-    const target = `~/${folder}`;
+    const target = `~/Documents/${folder}`;
     const link = `${dir}/${folder}`;
     symlinkCmd.textContent = `mkdir -p ${target} && ln -s ${target} ${link}`;
     symlinkSection.style.display = '';

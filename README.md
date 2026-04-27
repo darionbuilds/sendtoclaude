@@ -7,13 +7,13 @@ Chrome extension that adds a **Send to Claude** button to ServiceNow case forms.
 **1. Create your workspace and symlink** (one-time, any machine):
 
 ```bash
-mkdir -p ~/my-claude-workspace
-ln -s ~/my-claude-workspace ~/Downloads/my-claude-workspace
+mkdir -p ~/Documents/my-claude-workspace
+ln -s ~/Documents/my-claude-workspace ~/Downloads/my-claude-workspace
 ```
 
-The symlink lets Chrome write outside its default Downloads folder with zero runtime overhead. It will appear as an alias in Finder — that's expected.
+The symlink lets Chrome write into your Documents workspace with zero runtime overhead. It will appear as an alias in Finder — that's expected.
 
-> **Non-default download folder?** If Chrome is configured to download somewhere other than `~/Downloads`, use that path instead. The Options page will show you the exact command to run once you've entered your paths.
+> **Non-default download folder?** If Chrome is configured to download somewhere other than `~/Downloads`, open the extension's Options page, enter your actual download folder path, and it will generate the correct command for your setup.
 
 **2. Load the extension:**
 
