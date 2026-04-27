@@ -1,37 +1,32 @@
 const DEFAULTS = {
   downloadDirectory: '~/Downloads',
-  workspaceFolder: 'my-claude-workspace',
+  workspacePath: '~/my-claude-workspace',
 };
 
-function sanitizeFolder(raw) {
-  return raw
-    .trim()
-    .replace(/\\/g, '/')   // normalize backslashes
-    .replace(/\/+$/, '')   // strip trailing slashes
-    .replace(/^\/+/, '');  // strip leading slashes
-}
-
-function sanitizeDir(raw) {
+function sanitizePath(raw) {
   return raw
     .trim()
     .replace(/\\/g, '/')
-    .replace(/\/+$/, '');  // strip trailing slashes only
+    .replace(/\/+$/, '');
+}
+
+function folderName(workspacePath) {
+  return workspacePath.split('/').pop();
 }
 
 function updatePreview() {
-  const dir = sanitizeDir(document.getElementById('downloadDirectory').value) || '~/Downloads';
-  const folder = sanitizeFolder(document.getElementById('workspaceFolder').value);
+  const dir = sanitizePath(document.getElementById('downloadDirectory').value);
+  const workspace = sanitizePath(document.getElementById('workspacePath').value);
 
-  const fullPath = folder ? `${dir}/${folder}/` : `${dir}/`;
-  document.getElementById('previewPath').textContent = fullPath;
+  document.getElementById('previewPath').textContent =
+    workspace ? `${workspace}/` : '—';
 
   const symlinkSection = document.getElementById('symlinkSection');
   const symlinkCmd = document.getElementById('symlinkCmd');
+  const folder = workspace ? folderName(workspace) : '';
 
-  if (folder) {
-    const target = `~/Documents/${folder}`;
-    const link = `${dir}/${folder}`;
-    symlinkCmd.textContent = `mkdir -p ${target} && ln -s ${target} ${link}`;
+  if (workspace && dir && folder) {
+    symlinkCmd.textContent = `mkdir -p ${workspace} && ln -s ${workspace} ${dir}/${folder}`;
     symlinkSection.style.display = '';
   } else {
     symlinkSection.style.display = 'none';
@@ -41,19 +36,19 @@ function updatePreview() {
 function load() {
   chrome.storage.sync.get(DEFAULTS, (items) => {
     document.getElementById('downloadDirectory').value = items.downloadDirectory;
-    document.getElementById('workspaceFolder').value = items.workspaceFolder;
+    document.getElementById('workspacePath').value = items.workspacePath;
     updatePreview();
   });
 }
 
 function save() {
-  const downloadDirectory = sanitizeDir(document.getElementById('downloadDirectory').value) || DEFAULTS.downloadDirectory;
-  const workspaceFolder = sanitizeFolder(document.getElementById('workspaceFolder').value);
+  const downloadDirectory = sanitizePath(document.getElementById('downloadDirectory').value) || DEFAULTS.downloadDirectory;
+  const workspacePath = sanitizePath(document.getElementById('workspacePath').value) || DEFAULTS.workspacePath;
 
   document.getElementById('downloadDirectory').value = downloadDirectory;
-  document.getElementById('workspaceFolder').value = workspaceFolder;
+  document.getElementById('workspacePath').value = workspacePath;
 
-  chrome.storage.sync.set({ downloadDirectory, workspaceFolder }, () => {
+  chrome.storage.sync.set({ downloadDirectory, workspacePath }, () => {
     updatePreview();
     const status = document.getElementById('status');
     status.textContent = 'Saved.';
@@ -64,6 +59,6 @@ function save() {
 document.addEventListener('DOMContentLoaded', () => {
   load();
   document.getElementById('downloadDirectory').addEventListener('input', updatePreview);
-  document.getElementById('workspaceFolder').addEventListener('input', updatePreview);
+  document.getElementById('workspacePath').addEventListener('input', updatePreview);
   document.getElementById('save').addEventListener('click', save);
 });

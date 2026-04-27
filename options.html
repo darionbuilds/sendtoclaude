@@ -104,19 +104,19 @@
   </div>
 
   <div class="field">
-    <label for="workspaceFolder">Workspace subfolder</label>
-    <input type="text" id="workspaceFolder" placeholder="my-claude-workspace" />
+    <label for="workspacePath">Claude workspace path</label>
+    <input type="text" id="workspacePath" placeholder="~/my-claude-workspace" />
     <p class="hint">
-      Folder created <strong>inside</strong> your download folder where PDFs land.
-      Use forward slashes for nested paths, e.g. <code>Work/claude-cases</code>.
-      Leave blank to save directly into the download folder.
+      Full path to your Claude workspace folder on disk. PDFs will appear here after
+      the one-time symlink setup below.
     </p>
   </div>
 
   <div class="preview">
     <div><strong>Files will save to:</strong> <code id="previewPath"></code></div>
     <div class="setup-cmd" id="symlinkSection">
-      <strong>One-time Terminal setup</strong> — run this to route files to your Claude workspace:
+      <strong>One-time Terminal setup</strong> — Chrome can only download to subfolders within its download folder,
+      so this creates a symlink there that transparently redirects files into your Claude workspace:
       <code id="symlinkCmd"></code>
     </div>
   </div>

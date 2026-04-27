@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A Chrome MV3 extension that adds a "Send to Claude" button to ServiceNow case and task forms. Clicking the button downloads the case as a PDF into a configurable workspace folder (default: `~/Documents/my-claude-workspace/`), named by case number (e.g. `CS0001234.pdf`).
+A Chrome MV3 extension that adds a "Send to Claude" button to ServiceNow case and task forms. Clicking the button downloads the case as a PDF into a configurable workspace folder (default: `~/my-claude-workspace/`), named by case number (e.g. `CS0001234.pdf`).
 
 ## No Build Step
 
@@ -15,9 +15,9 @@ Pure vanilla JavaScript — no package.json, bundler, or compilation. Load unpac
 An options page (`options.html` + `options.js`) lets users configure two settings stored in `chrome.storage.sync`:
 
 - **Your browser's configured download folder** (default: `~/Downloads`) — must match what Chrome already has set in Settings → Downloads → Location. Chrome provides no API to read this programmatically, so the user enters it manually. Used only for the live path preview and symlink command; it does not affect the actual download (Chrome controls that).
-- **Workspace subfolder** (default: `my-claude-workspace`) — subfolder relative to the download directory where PDFs land. This is the only value `background.js` uses.
+- **Claude workspace path** (default: `~/my-claude-workspace`) — full on-disk path to the Claude workspace folder. `background.js` derives the download subfolder name from the last path component (e.g. `my-claude-workspace`), which Chrome places inside the download directory. The symlink routes that subfolder to the full workspace path.
 
-The options page warns that most users should leave defaults unchanged — deviating requires manually re-running the setup command, and a mismatch between the symlink and the configured paths will silently break delivery. It shows a live **"Files will save to:"** preview combining both values, and a ready-to-run `mkdir`/`ln -s` setup command that adapts to the user's actual paths.
+The options page warns that most users should leave defaults unchanged — deviating requires manually re-running the setup command, and a mismatch between the symlink and the configured paths will silently break delivery. It shows a live **"Files will save to:"** preview (the workspace path) and a ready-to-run `mkdir`/`ln -s` setup command that adapts to the user's actual paths.
 
 Access via right-click extension icon → Options, or `chrome://extensions` → Details → Extension options.
 
@@ -32,13 +32,13 @@ Three scripts plus an options page; scripts communicate via Chrome message passi
 - Also listens for async `downloadFailed` messages from the background worker for mid-flight failures
 
 **`background.js`** — service worker (MV3)
-- Receives `downloadCasePDF`, reads `workspaceFolder` from `chrome.storage.sync`, then calls `chrome.downloads.download()` with the URL `https://support.servicenow.com/{tableName}.do?PDF&sys_id={sysId}` and filename `{workspaceFolder}/{caseNum}.pdf`
+- Receives `downloadCasePDF`, reads `workspacePath` from `chrome.storage.sync`, extracts the last path component as the download subfolder, then calls `chrome.downloads.download()` with the URL `https://support.servicenow.com/{tableName}.do?PDF&sys_id={sysId}` and filename `{folder}/{caseNum}.pdf`
 - Tracks in-flight downloads in `pendingDownloads` (Map of downloadId → tabId) to forward async interruption errors back to the content script
 
 **`options.html` / `options.js`** — settings UI
-- Persists `downloadDirectory` (default: `~/Downloads`) and `workspaceFolder` (default: `my-claude-workspace`) to `chrome.storage.sync`
+- Persists `downloadDirectory` (default: `~/Downloads`) and `workspacePath` (default: `~/my-claude-workspace`) to `chrome.storage.sync`
 - Sanitizes input: strips trailing slashes, normalizes backslashes to forward slashes
-- Shows a live "Files will save to:" preview and a generated `mkdir`/`ln -s` setup command as both fields change; the symlink target is always `~/Documents/{workspaceFolder}`, reflecting the standard KB-prescribed workspace location
+- Shows a live "Files will save to:" preview (the workspace path) and a generated `mkdir`/`ln -s` setup command as both fields change
 
 **Why the split:** content scripts cannot access `chrome.downloads`; only the service worker can.
 
@@ -48,4 +48,4 @@ Content script runs on four `https://support.servicenow.com/` patterns covering 
 
 ## Workspace Path
 
-Chrome extensions cannot read or change the browser's configured download directory — `chrome.downloads.download()` filenames are always relative to it. The `downloadDirectory` setting exists only for display purposes (path preview + symlink command generation). The `workspaceFolder` setting is the only value passed to `chrome.downloads.download()`. The README symlink setup routes the download subfolder to the Claude workspace in `~/Documents/`.
+Chrome extensions cannot read or change the browser's configured download directory — `chrome.downloads.download()` filenames are always relative to it. The `downloadDirectory` setting exists only for display purposes (symlink command generation). `workspacePath` is the source of truth: its last path component becomes the relative download subfolder, and the symlink routes `{downloadDirectory}/{folderName}` → `{workspacePath}` so files land in the workspace directly.

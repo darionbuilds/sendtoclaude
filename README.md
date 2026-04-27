@@ -7,13 +7,13 @@ Chrome extension that adds a **Send to Claude** button to ServiceNow case forms.
 **1. Create your workspace and symlink** (one-time, any machine):
 
 ```bash
-mkdir -p ~/Documents/my-claude-workspace
-ln -s ~/Documents/my-claude-workspace ~/Downloads/my-claude-workspace
+mkdir -p ~/my-claude-workspace
+ln -s ~/my-claude-workspace ~/Downloads/my-claude-workspace
 ```
 
-The symlink lets Chrome write into your Documents workspace with zero runtime overhead. It will appear as an alias in Finder — that's expected.
+Chrome downloads into the symlink inside your download folder; the symlink routes files directly into `~/my-claude-workspace`. It will appear as an alias in Finder — that's expected.
 
-> **Non-default download folder?** If Chrome is configured to download somewhere other than `~/Downloads`, open the extension's Options page, enter your actual download folder path, and it will generate the correct command for your setup.
+> **Non-default download folder or workspace path?** Open the extension's Options page, update your paths, and it will generate the exact command for your setup.
 
 **2. Load the extension:**
 
@@ -37,8 +37,8 @@ Right-click the extension icon → **Options** (or go to `chrome://extensions` �
 
 | Setting | Default | Description |
 |---|---|---|
-| Your browser's configured download folder | `~/Downloads` | Must match what's set in Chrome **Settings → Downloads → Location**. This extension cannot read or change that setting — keep this field in sync manually. Used only to display the full resolved path and generate the setup command. |
-| Workspace subfolder | `my-claude-workspace` | Folder created inside your download folder where PDFs land. Use forward slashes for nested paths, e.g. `Work/claude-cases`. Leave blank to save directly into the download folder. |
+| Your browser's configured download folder | `~/Downloads` | Must match what's set in Chrome **Settings → Downloads → Location**. This extension cannot read or change that setting — keep this field in sync manually. Used only to generate the setup command. |
+| Claude workspace path | `~/my-claude-workspace` | Full path to your Claude workspace folder on disk. PDFs will appear here after the one-time symlink setup. The folder name (last path component) is used as the download subfolder inside your download directory. |
 
 The Options page shows a live **"Files will save to:"** preview and a one-time Terminal setup command that updates as you type.
 

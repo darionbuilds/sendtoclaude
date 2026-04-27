@@ -1,4 +1,4 @@
-const DEFAULTS = { workspaceFolder: 'my-claude-workspace' };
+const DEFAULTS = { workspacePath: '~/my-claude-workspace' };
 
 // Maps downloadId → tabId for in-flight downloads initiated by this extension
 const pendingDownloads = new Map();
@@ -10,8 +10,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const tabId = sender.tab?.id;
   const pdfUrl = `https://support.servicenow.com/${tableName}.do?PDF&sys_id=${sysId}`;
 
-  chrome.storage.sync.get(DEFAULTS, ({ workspaceFolder }) => {
-    const folder = workspaceFolder.trim().replace(/\/+$/, '');
+  chrome.storage.sync.get(DEFAULTS, ({ workspacePath }) => {
+    const folder = workspacePath.trim().replace(/\/+$/, '').split('/').pop();
     const filename = caseNum
       ? (folder ? `${folder}/${caseNum}.pdf` : `${caseNum}.pdf`)
       : undefined;
@@ -44,7 +44,7 @@ chrome.downloads.onChanged.addListener((delta) => {
     const error = delta.error?.current ?? 'Download interrupted';
     pendingDownloads.delete(delta.id);
     chrome.tabs.sendMessage(tabId, { action: 'downloadFailed', error }, () => {
-      void chrome.runtime.lastError; // swallow if tab/context is already gone
+      void chrome.runtime.lastError;
     });
   }
 });
