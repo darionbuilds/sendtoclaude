@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Send to Claude",
-  "version": "1.0",
-  "description": "One-click download of ServiceNow case PDF into Claude workspace",
-  "permissions": ["downloads", "storage"],
+  "version": "2.0",
+  "description": "One-click ingest of ServiceNow cases into Claude workspace — case PDF, attachments, CSTASKs, tracker.",
+  "permissions": ["downloads", "storage", "nativeMessaging"],
   "options_page": "options.html",
   "host_permissions": ["https://support.servicenow.com/*"],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "content_scripts": [
     {
@@ -15,7 +16,11 @@
         "https://support.servicenow.com/sn_customerservice_case.do*",
         "https://support.servicenow.com/nav_to.do?uri=sn_customerservice_case.do*",
         "https://support.servicenow.com/sn_customerservice_task.do*",
-        "https://support.servicenow.com/nav_to.do?uri=sn_customerservice_task.do*"
+        "https://support.servicenow.com/nav_to.do?uri=sn_customerservice_task.do*",
+        "https://support.servicenow.com/kb_view.do*",
+        "https://support.servicenow.com/kb_knowledge.do*",
+        "https://support.servicenow.com/nav_to.do?uri=kb_view.do*",
+        "https://support.servicenow.com/nav_to.do?uri=kb_knowledge.do*"
       ],
       "js": ["content.js"],
       "all_frames": true,

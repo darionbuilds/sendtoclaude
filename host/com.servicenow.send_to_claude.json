@@ -1,0 +1,9 @@
+{
+  "name": "com.servicenow.send_to_claude",
+  "description": "Send to Claude — ServiceNow case ingestion native messaging host",
+  "path": "__HOST_BIN__",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://__EXTENSION_ID__/"
+  ]
+}
