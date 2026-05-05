@@ -1,51 +1,149 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code when working in this repo.
 
 ## What This Is
 
-A Chrome MV3 extension that adds a "Send to Claude" button to ServiceNow case and task forms. Clicking the button downloads the case as a PDF into a configurable workspace folder (default: `~/my-claude-workspace/`), named by case number (e.g. `CS0001234.pdf`).
+Chrome MV3 extension that ingests ServiceNow records (cases, tasks, KB articles) into a local Claude workspace at `~/my-claude-workspace/`. Read-only against ServiceNow.
+
+## Repo Layout (flat — do not change)
+
+The extension repo root **is** the loaded extension. `Load unpacked → select this folder` must continue to work. Do not move `manifest.json`, `background.js`, `content.js`, `options.html`, `options.js`, or `icons/` into a subfolder.
+
+```
+SendToClaudeExtension/        ← Chrome loads THIS folder
+├── manifest.json             ← MV3 manifest (module service worker)
+├── background.js             ← service worker, ES module
+├── content.js                ← content script (IIFE; not a module)
+├── options.html
+├── options.js
+├── icons/{16,48,128}.png     ← Darion's. Do not regenerate.
+├── lib/                      ← ES modules imported by background.js
+│   ├── sn-api.js             ← SN REST helpers (GET only — G1)
+│   ├── messaging.js          ← native host bridge
+│   └── url-detect.js         ← URL → record context
+├── host/                     ← native messaging host (Python)
+│   ├── send_to_claude_host.py
+│   ├── parser.py             ← BUNDLED copy of case-pdf-parse.py
+│   └── com.servicenow.send_to_claude.json   ← manifest template
+├── setup.sh                  ← one-command installer
+├── uninstall.sh
+├── README.md
+└── REFACTOR_PLAN.md          ← v1 → v2 design history
+```
 
 ## No Build Step
 
-Pure vanilla JavaScript — no package.json, bundler, or compilation. Load unpacked via `chrome://extensions` → Developer mode → Load unpacked → select this directory. After any file change, click the refresh icon on the extension card and reload the ServiceNow tab.
+Pure JavaScript + Python. No bundler, no compilation. Reload via `chrome://extensions/` after any change.
 
-## Configuration
+## Critical Invariants
 
-An options page (`options.html` + `options.js`) lets users configure two settings stored in `chrome.storage.sync`:
+These were broken by a previous refactor and reverted. Do not break them again.
 
-- **Your browser's configured download folder** (default: `~/Downloads`) — must match what Chrome already has set in Settings → Downloads → Location. Chrome provides no API to read this programmatically, so the user enters it manually. Used only for the live path preview and symlink command; it does not affect the actual download (Chrome controls that).
-- **Claude workspace path** (default: `~/my-claude-workspace`) — full on-disk path to the Claude workspace folder. `background.js` derives the download subfolder name from the last path component (e.g. `my-claude-workspace`), which Chrome places inside the download directory. The symlink routes that subfolder to the full workspace path.
-
-The options page warns that most users should leave defaults unchanged — deviating requires manually re-running the setup command, and a mismatch between the symlink and the configured paths will silently break delivery. It shows a live **"Files will save to:"** preview (the workspace path) and a ready-to-run `mkdir`/`ln -s` setup command that adapts to the user's actual paths.
-
-Access via right-click extension icon → Options, or `chrome://extensions` → Details → Extension options.
+1. **Flat repo layout** — extension root is the loaded folder.
+2. **Existing icons** at `icons/icon{16,48,128}.png` are not regenerated.
+3. **Content script `matches`** — case + task + KB patterns are listed explicitly; do not collapse into `*://*.service-now.com/*`.
+4. **DOM probe in `getCaseInfo()`** in `content.js` is preserved character-for-character (works empirically on real SN forms).
+5. **Four-state button** (`ready` / `sending` / `ok` / `error`) injected into `.navbar_ui_actions`, with 4 s auto-reset. A 5th `setup` state was added for host-not-available; the four base states are unchanged.
+6. **`/<table>.do?PDF&sys_id=<id>`** URL pattern for record PDF export — proven on `support.servicenow.com`.
+7. **`chrome.storage.sync`** for any persisted settings.
+8. **Read-only against ServiceNow** — only GET requests in `lib/sn-api.js`. Verified by `rg -n "method:\\s*['\"](POST\|PUT\|PATCH\|DELETE)['\"]" *.js lib/*.js` returning zero.
 
 ## Architecture
 
-Three scripts plus an options page; scripts communicate via Chrome message passing:
+Three layers, message-passing between them:
 
-**`content.js`** — injected into ServiceNow case/task pages at `document_end`
-- Reads case metadata from the DOM (`getCaseInfo`): case number, `sys_id`, and table name
-- Injects a button into `.navbar_ui_actions` (uses a `MutationObserver` with a 15 s timeout if the element isn't ready yet)
-- On click: sends `downloadCasePDF` message to the background worker, then updates a 4-state button (ready → sending → ok/error → auto-reset)
-- Also listens for async `downloadFailed` messages from the background worker for mid-flight failures
+```
+content.js   ──sendMessage──▶  background.js   ──connectNative──▶  host/send_to_claude_host.py
+   ▲                                ▲                                       │
+   │                                │                                       ▼
+   └──── window.prompt ─────────────┘                            host/parser.py
+                                                                            │
+                                                                            ▼
+                                                              ~/my-claude-workspace/
+                                                                cases/CS<n>/...
+```
 
-**`background.js`** — service worker (MV3)
-- Receives `downloadCasePDF`, reads `workspacePath` from `chrome.storage.sync`, extracts the last path component as the download subfolder, then calls `chrome.downloads.download()` with the URL `https://support.servicenow.com/{tableName}.do?PDF&sys_id={sysId}` and filename `{folder}/{caseNum}.pdf`
-- Tracks in-flight downloads in `pendingDownloads` (Map of downloadId → tabId) to forward async interruption errors back to the content script
+### `content.js`
+Injects the button into `.navbar_ui_actions`. Detects page type (case/task vs KB). Reads case info from the DOM (preserved). Sends `{kind: 'ingest', url, dom}` to background on click. Handles the reference-mode prompt round-trip via `window.prompt()`.
 
-**`options.html` / `options.js`** — settings UI
-- Persists `downloadDirectory` (default: `~/Downloads`) and `workspacePath` (default: `~/my-claude-workspace`) to `chrome.storage.sync`
-- Sanitizes input: strips trailing slashes, normalizes backslashes to forward slashes
-- Shows a live "Files will save to:" preview (the workspace path) and a generated `mkdir`/`ln -s` setup command as both fields change
+### `background.js`
+ES module. Resolves the case record via SN REST. Determines primary vs reference based on `partner_tse_email` from workspace config + case state. Fetches the full envelope (case PDF, attachments, tasks, task PDFs, task attachments) for primary-mode pulls. Calls the native host with a single bundled payload.
 
-**Why the split:** content scripts cannot access `chrome.downloads`; only the service worker can.
+### `host/send_to_claude_host.py`
+Native messaging host. Reads workspace config from `~/my-claude-workspace/.claude/config.json`. Writes files. Shells out to **the bundled parser** at `host/parser.py` (not the workspace's copy). Populates `cases/CS<n>/tracker.md` frontmatter.
+
+### `host/parser.py`
+Bundled snapshot of the workspace's `case-pdf-parse.py`. The host always uses this copy so a parser-version drift in the workspace cannot break ingest. **When the workspace parser meaningfully changes, manually copy it here:** `cp ~/my-claude-workspace/.claude/scripts/case-pdf-parse.py host/parser.py`.
+
+## Workspace Contract
+
+The extension reads from (never writes to):
+
+- `~/my-claude-workspace/.claude/config.json`:
+  - `workspace_root` — absolute path
+  - `partner_tse_email` — used for primary/reference decision
+
+It writes to:
+
+- `~/my-claude-workspace/cases/CS<n>/...`
+- `~/my-claude-workspace/knowledge/KB<n>.pdf`
+
+It never writes outside `workspace_root`. Setup never auto-creates the workspace; the user must set it up per KB2948102 first.
+
+## Configuration
+
+Two pieces of state:
+
+- **`chrome.storage.sync`** — currently unused by the new code paths but reserved per invariant 7. Older versions stored `downloadDirectory` / `workspacePath` here; new code reads workspace config from the host instead.
+- **`~/my-claude-workspace/.claude/config.json`** — sourced via the host's `read_config` op.
 
 ## URL Patterns
 
-Content script runs on four `https://support.servicenow.com/` patterns covering direct case/task URLs and `nav_to.do` redirect variants, with `all_frames: true` to handle iframe-embedded forms.
+Content script runs on:
 
-## Workspace Path
+- `support.servicenow.com/sn_customerservice_case.do*` (+ `nav_to.do?uri=...` variant)
+- `support.servicenow.com/sn_customerservice_task.do*` (+ `nav_to.do?uri=...` variant)
+- `support.servicenow.com/kb_view.do*` (+ `nav_to.do?uri=...` variant)
+- `support.servicenow.com/kb_knowledge.do*` (+ `nav_to.do?uri=...` variant)
 
-Chrome extensions cannot read or change the browser's configured download directory — `chrome.downloads.download()` filenames are always relative to it. The `downloadDirectory` setting exists only for display purposes (symlink command generation). `workspacePath` is the source of truth: its last path component becomes the relative download subfolder, and the symlink routes `{downloadDirectory}/{folderName}` → `{workspacePath}` so files land in the workspace directly.
+`all_frames: true` to handle iframe-embedded forms. `host_permissions` is just `https://support.servicenow.com/*`.
+
+## Permissions
+
+- `downloads` — retained from v1; harmless and may be used for future fallback paths.
+- `storage` — settings.
+- `nativeMessaging` — required for `chrome.runtime.connectNative`.
+- `host_permissions: https://support.servicenow.com/*` — for SN REST + PDF endpoint.
+
+## When You Edit
+
+- **Don't broaden `content_scripts.matches`.** Add new specific patterns if needed.
+- **Don't add SN write-method calls.** All `fetch()` calls live in `lib/sn-api.js` and use the `COMMON_OPTS` GET-only object. Do not bypass it.
+- **Don't change `getCaseInfo()` in `content.js`** without testing on a real SN form.
+- **Don't auto-create the workspace** in `setup.sh`. Reference KB2948102 instead.
+- **Bundled parser drift:** if you change the workspace parser, manually re-copy to `host/parser.py`.
+
+## Testing
+
+Automatable:
+```bash
+# G1 — no SN write methods
+rg -n "method:\\s*['\"](POST|PUT|PATCH|DELETE)['\"]" *.js lib/*.js
+
+# Manifest validity
+python3 -m json.tool manifest.json > /dev/null
+
+# Host smoke
+python3 -c "
+import json, struct, subprocess
+msg = json.dumps({'op':'ping'}).encode()
+proc = subprocess.run(['python3','host/send_to_claude_host.py'],
+  input=struct.pack('<I',len(msg))+msg, capture_output=True, timeout=15)
+out = proc.stdout
+n = struct.unpack('<I', out[:4])[0]
+print(out[4:4+n].decode())
+"
+```
+
+Manual matrix lives in `REFACTOR_PLAN.md` §7.

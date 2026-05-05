@@ -1,45 +1,109 @@
 # Send to Claude
 
-Chrome extension that adds a **Send to Claude** button to ServiceNow case forms. One click downloads the case as a PDF, named by case number, into your configured workspace folder.
+Chrome extension that adds a **Send to Claude** button to ServiceNow case, task, and KB pages on `support.servicenow.com`. One click ingests the record into your local Claude workspace — case PDF, attachments, CSTASKs (with their PDFs and attachments), and a populated `tracker.md`.
 
-## Setup
+Read-only against ServiceNow. The extension never writes upstream.
 
-**1. Create your workspace and symlink** (one-time, any machine):
+## Prerequisites
 
-```bash
-mkdir -p ~/my-claude-workspace
-ln -s ~/my-claude-workspace ~/Downloads/my-claude-workspace
-```
+- **Claude workspace set up** per **KB2948102**. The workspace lives at `~/my-claude-workspace/` and contains `.claude/config.json`.
+- **Python 3** on your system (macOS ships it; Linux: `apt install python3 python3-pip`).
+- **Chrome / Chromium / Edge** on macOS or Linux. (Windows install script is a stub for v1.)
 
-Chrome downloads into the symlink inside your download folder; the symlink routes files directly into `~/my-claude-workspace`. It will appear as an alias in Finder — that's expected.
+If the workspace isn't set up, `setup.sh` will tell you and stop.
 
-> **Non-default download folder or workspace path?** Open the extension's Options page, update your paths, and it will generate the exact command for your setup.
+## Install
 
-**2. Load the extension:**
-
-1. Open `chrome://extensions` and enable **Developer mode** (top right)
-2. Click **Load unpacked** → select this folder
-3. Open any ServiceNow case — the button appears in the navbar next to QuickSearch
-
-**3. Chrome download setting:**
-
-Go to **Settings → Downloads** and turn **off** "Ask where to save each file before downloading" so PDFs drop instantly with no prompt.
+1. Clone or download this repo.
+2. **Load unpacked:**
+   1. Open `chrome://extensions/`
+   2. Enable **Developer mode** (top right)
+   3. Click **Load unpacked** → select this folder (the repo root)
+3. **Run setup once:**
+   ```bash
+   ./setup.sh
+   ```
+   The script auto-detects your extension ID, installs `pdfplumber`, writes the native messaging manifest, and smoke-tests the host. It will not modify your workspace.
+4. **Reload the extension** in `chrome://extensions/` so the new permissions take effect.
+5. **Verify:** right-click the extension icon → Options. The Status card should show **Host: ok ✓** with your workspace path and partner TSE email.
 
 ## Usage
 
-Click **Send to Claude** on any case or task. The PDF will appear in your configured workspace folder, named after the case number (e.g. `CS0001234.pdf`).
+Click **Send to Claude** on any case, task, or KB page. The button cycles through:
+
+- **Send to Claude** (orange) — ready
+- **Sending…** (dark orange) — fetch + host write in flight
+- **Sent ✓** (green) — done; auto-resets after 4 s
+- **Failed ✗** (red) — error; alert shows details
+- **Setup needed ⚠** (yellow) — host not installed or stale; open the Options page
+
+### Primary vs Reference mode
+
+The extension reads `partner_tse_email` from your workspace config. When you click on a case:
+
+- If the case is **assigned to you** and not in a closed state → **Primary mode**: full pull (case PDF + attachments + tasks + task attachments + populated tracker).
+- Otherwise → **Reference mode**: a prompt asks which primary case this should be filed under. The single record's PDF lands at `cases/CS<primary>/refs/CS<reference>-<name>.pdf`. **No tracker is created or updated** for the reference case (G4).
+
+### Subsequent clicks (delta sync)
+
+Re-clicking a case you've already pulled does an incremental sync: only new attachments are downloaded, removed-from-source attachments get flagged in the tracker (the local file is preserved), and the tracker's `last_synced` advances.
+
+## Where files land
+
+```
+~/my-claude-workspace/
+├── cases/
+│   └── CS<n>/
+│       ├── CS<n>.pdf
+│       ├── tracker.md           ← populated by the host from parser output
+│       ├── attachments/
+│       │   └── <sys_id>-<file>
+│       ├── tasks/
+│       │   └── CSTASK<m>.pdf
+│       │   └── CSTASK<m>/attachments/<sys_id>-<file>
+│       └── refs/                ← reference-mode snapshots (no tracker)
+│           └── CS<n>-<file>
+└── knowledge/
+    └── KB<n>.pdf                ← KB articles
+```
 
 ## Settings
 
-Right-click the extension icon → **Options** (or go to `chrome://extensions` → Details → Extension options).
+Right-click the extension icon → **Options**. The Options page shows:
 
-> **Most users should leave these at their defaults.** Changing them requires manually re-running the Terminal setup command. If your symlink and download folder get out of sync, PDFs will not reach your Claude workspace.
+- **Host status** — green ok / red not connected
+- **Workspace path** — sourced from `~/my-claude-workspace/.claude/config.json`
+- **Partner TSE email** — same source
+- **Host version**
 
-| Setting | Default | Description |
-|---|---|---|
-| Your browser's configured download folder | `~/Downloads` | Must match what's set in Chrome **Settings → Downloads → Location**. This extension cannot read or change that setting — keep this field in sync manually. Used only to generate the setup command. |
-| Claude workspace path | `~/my-claude-workspace` | Full path to your Claude workspace folder on disk. PDFs will appear here after the one-time symlink setup. The folder name (last path component) is used as the download subfolder inside your download directory. |
+If the host is not connected, the page shows a setup-needed panel with the exact `./setup.sh` command to run.
 
-The Options page shows a live **"Files will save to:"** preview and a one-time Terminal setup command that updates as you type.
+## Uninstall
 
-Settings sync across Chrome profiles via `chrome.storage.sync`.
+Remove the native messaging host:
+```bash
+./uninstall.sh
+```
+Then remove the extension via `chrome://extensions/`. Your workspace is untouched.
+
+## Troubleshooting
+
+**Button doesn't appear on the case form.** The form's `.navbar_ui_actions` element isn't ready yet. Wait a couple of seconds; the content script retries via MutationObserver for 15 s. If it still doesn't appear, reload the page.
+
+**"Native host not installed."** Run `./setup.sh` from the repo root.
+
+**"Native host install is stale (extension ID mismatch)."** The extension was reloaded with a new ID. Re-run `./setup.sh`.
+
+**"Workspace config not found at ..."** Set up the workspace per KB2948102, then re-click.
+
+**Setup script can't auto-detect extension ID.** It will prompt you to paste it. Find it in `chrome://extensions/` — the 32-char string under the extension name.
+
+## Architecture
+
+Three components:
+
+1. **Content script** (`content.js`) — injects the button onto SN forms; reads case info from the DOM (preserved verbatim from the v1 extension); sends the click to background.
+2. **Background service worker** (`background.js` + `lib/`) — fetches the case envelope from SN REST (read-only, GET only), bundles it as base64, calls the native host.
+3. **Native messaging host** (`host/send_to_claude_host.py`) — writes files into the workspace, shells out to the bundled parser (`host/parser.py`), populates `tracker.md`.
+
+Read `docs/case-ingestion-architecture.md` in the workspace for the full design.
