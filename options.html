@@ -6,73 +6,43 @@
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      max-width: 560px;
+      max-width: 620px;
       margin: 40px auto;
       padding: 0 20px;
       color: #222;
     }
     h1 { font-size: 1.3em; margin-bottom: 4px; }
-    .subtitle { color: #666; font-size: 0.9em; margin-bottom: 20px; }
-    .warning {
-      font-size: 0.83em;
-      background: #fff8e6;
-      border: 1px solid #e6c84a;
-      border-radius: 4px;
-      padding: 9px 12px;
-      margin-bottom: 24px;
-      color: #5a4500;
-      line-height: 1.5;
-    }
-    .field { margin-bottom: 22px; }
-    label { display: block; font-weight: 600; margin-bottom: 6px; }
-    input[type="text"] {
-      width: 100%;
-      box-sizing: border-box;
-      padding: 8px 10px;
-      font-size: 0.95em;
-      border: 1px solid #bbb;
-      border-radius: 4px;
-    }
-    .hint {
-      font-size: 0.82em;
-      color: #666;
-      margin-top: 6px;
-      line-height: 1.5;
-    }
-    .hint code, .preview code {
-      background: #f0f0f0;
-      padding: 1px 4px;
-      border-radius: 3px;
-      font-size: 0.95em;
-    }
-    .preview {
-      margin-top: 4px;
-      padding: 14px 16px;
-      background: #f8f8f8;
+    .subtitle { color: #666; font-size: 0.9em; margin-bottom: 24px; }
+    .card {
       border: 1px solid #ddd;
-      border-radius: 5px;
-      font-size: 0.88em;
-      line-height: 1.8;
+      border-radius: 6px;
+      padding: 16px 20px;
+      margin-bottom: 18px;
+      background: #fafafa;
     }
-    .preview strong { display: inline-block; min-width: 130px; color: #444; }
-    .setup-cmd {
-      margin-top: 10px;
-      font-size: 0.82em;
-      color: #555;
-    }
-    .setup-cmd code {
-      display: block;
-      margin-top: 4px;
+    .card h2 { font-size: 1.05em; margin: 0 0 10px 0; }
+    .row { margin: 6px 0; font-size: 0.95em; }
+    .row strong { display: inline-block; min-width: 170px; color: #444; }
+    .ok    { color: #006600; font-weight: 600; }
+    .bad   { color: #b00020; font-weight: 600; }
+    .pend  { color: #888; }
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       background: #f0f0f0;
-      padding: 6px 10px;
-      border-radius: 4px;
-      font-size: 1em;
-      word-break: break-all;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 0.92em;
     }
-    .actions { margin-top: 24px; display: flex; align-items: center; gap: 12px; }
+    pre {
+      display: block;
+      padding: 10px 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin: 8px 0;
+    }
     button {
-      padding: 8px 20px;
-      font-size: 0.95em;
+      padding: 7px 16px;
+      font-size: 0.92em;
       border: none;
       border-radius: 4px;
       cursor: pointer;
@@ -81,50 +51,42 @@
       font-weight: 600;
     }
     button:hover { background: #b05500; }
-    #status { font-size: 0.9em; color: #006600; }
+    .setup-needed {
+      border-color: #d9a300;
+      background: #fff8e6;
+    }
+    .setup-needed h2 { color: #8a6500; }
+    .footnote { font-size: 0.82em; color: #777; margin-top: 14px; }
+    .footnote a { color: #555; }
   </style>
 </head>
 <body>
-  <h1>Send to Claude — Settings</h1>
-  <p class="subtitle">Configure where case PDFs are saved.</p>
+  <h1>Send to Claude</h1>
+  <p class="subtitle">One-click ingest of ServiceNow cases into your Claude workspace.</p>
 
-  <p class="warning">
-    <strong>Most users should leave these at their defaults.</strong>
-    Changing them requires manually re-running the Terminal setup command below.
-    If your symlink and download folder get out of sync, PDFs will not reach your Claude workspace.
-  </p>
-
-  <div class="field">
-    <label for="downloadDirectory">Your browser's configured download folder</label>
-    <input type="text" id="downloadDirectory" placeholder="~/Downloads" />
-    <p class="hint">
-      Enter the path that matches what's set in Chrome <strong>Settings → Downloads → Location</strong>.
-      This extension cannot read or change that setting — this field must be kept in sync manually.
-    </p>
+  <div id="setup-card" class="card setup-needed" style="display:none;">
+    <h2>Setup needed</h2>
+    <p>The native messaging host isn't responding. Run this in Terminal, then reload the extension:</p>
+    <pre id="setup-cmd">cd <your-extension-folder> &amp;&amp; ./setup.sh</pre>
+    <p class="footnote" id="setup-detail"></p>
   </div>
 
-  <div class="field">
-    <label for="workspacePath">Claude workspace path</label>
-    <input type="text" id="workspacePath" placeholder="~/my-claude-workspace" />
-    <p class="hint">
-      Full path to your Claude workspace folder on disk. PDFs will appear here after
-      the one-time symlink setup below.
-    </p>
-  </div>
-
-  <div class="preview">
-    <div><strong>Files will save to:</strong> <code id="previewPath"></code></div>
-    <div class="setup-cmd" id="symlinkSection">
-      <strong>One-time Terminal setup</strong> — Chrome can only download to subfolders within its download folder,
-      so this creates a symlink there that transparently redirects files into your Claude workspace:
-      <code id="symlinkCmd"></code>
+  <div class="card">
+    <h2>Status</h2>
+    <div class="row"><strong>Host:</strong> <span id="host-status" class="pend">checking…</span></div>
+    <div class="row"><strong>Workspace:</strong> <span id="workspace-path" class="pend">—</span></div>
+    <div class="row"><strong>Partner TSE email:</strong> <span id="partner-email" class="pend">—</span></div>
+    <div class="row"><strong>Host version:</strong> <span id="host-version" class="pend">—</span></div>
+    <div style="margin-top: 12px;">
+      <button id="recheck">Re-check</button>
+      <span id="recheck-status" style="margin-left: 12px; font-size: 0.9em; color: #006600;"></span>
     </div>
   </div>
 
-  <div class="actions">
-    <button id="save">Save</button>
-    <span id="status"></span>
-  </div>
+  <p class="footnote">
+    Workspace setup: <strong>KB2948102</strong>.
+    Host setup: run <code>./setup.sh</code> from the extension repo root after the workspace is in place.
+  </p>
 
   <script src="options.js"></script>
 </body>

@@ -1,64 +1,71 @@
-const DEFAULTS = {
-  downloadDirectory: '~/Downloads',
-  workspacePath: '~/my-claude-workspace',
-};
+// options.js — surfaces native host status + workspace contract.
 
-function sanitizePath(raw) {
-  return raw
-    .trim()
-    .replace(/\\/g, '/')
-    .replace(/\/+$/, '');
+function setText(id, text, cls) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = cls || '';
 }
 
-function folderName(workspacePath) {
-  return workspacePath.split('/').pop();
+function showSetupNeeded(detail) {
+  document.getElementById('setup-card').style.display = '';
+  document.getElementById('setup-detail').textContent = detail || '';
 }
 
-function updatePreview() {
-  const dir = sanitizePath(document.getElementById('downloadDirectory').value);
-  const workspace = sanitizePath(document.getElementById('workspacePath').value);
+function hideSetupNeeded() {
+  document.getElementById('setup-card').style.display = 'none';
+}
 
-  document.getElementById('previewPath').textContent =
-    workspace ? `${workspace}/` : '—';
+async function pingHost() {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ kind: 'ping_host' }, (response) => {
+      if (chrome.runtime.lastError) {
+        resolve({ ok: false, error: chrome.runtime.lastError.message });
+        return;
+      }
+      resolve(response || { ok: false, error: 'no response' });
+    });
+  });
+}
 
-  const symlinkSection = document.getElementById('symlinkSection');
-  const symlinkCmd = document.getElementById('symlinkCmd');
-  const folder = workspace ? folderName(workspace) : '';
+async function refresh() {
+  setText('host-status', 'checking…', 'pend');
+  setText('workspace-path', '—', 'pend');
+  setText('partner-email', '—', 'pend');
+  setText('host-version', '—', 'pend');
 
-  if (workspace && dir && folder) {
-    symlinkCmd.textContent = `mkdir -p ${workspace} && ln -s ${workspace} ${dir}/${folder}`;
-    symlinkSection.style.display = '';
-  } else {
-    symlinkSection.style.display = 'none';
+  const r = await pingHost();
+  if (r.ok && r.result && r.result.ok) {
+    const inner = r.result;
+    setText('host-status', 'ok ✓', 'ok');
+    setText('workspace-path', inner.workspace_root || '—', '');
+    setText('partner-email', inner.partner_tse_email || '—', '');
+    setText('host-version', inner.host_version || '—', '');
+    hideSetupNeeded();
+    return;
   }
-}
 
-function load() {
-  chrome.storage.sync.get(DEFAULTS, (items) => {
-    document.getElementById('downloadDirectory').value = items.downloadDirectory;
-    document.getElementById('workspacePath').value = items.workspacePath;
-    updatePreview();
-  });
-}
-
-function save() {
-  const downloadDirectory = sanitizePath(document.getElementById('downloadDirectory').value) || DEFAULTS.downloadDirectory;
-  const workspacePath = sanitizePath(document.getElementById('workspacePath').value) || DEFAULTS.workspacePath;
-
-  document.getElementById('downloadDirectory').value = downloadDirectory;
-  document.getElementById('workspacePath').value = workspacePath;
-
-  chrome.storage.sync.set({ downloadDirectory, workspacePath }, () => {
-    updatePreview();
-    const status = document.getElementById('status');
-    status.textContent = 'Saved.';
-    setTimeout(() => { status.textContent = ''; }, 2000);
-  });
+  const err = (r.error || (r.result && r.result.error) || 'host unreachable');
+  setText('host-status', 'not connected ✗', 'bad');
+  showSetupNeeded(err);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  load();
-  document.getElementById('downloadDirectory').addEventListener('input', updatePreview);
-  document.getElementById('workspacePath').addEventListener('input', updatePreview);
-  document.getElementById('save').addEventListener('click', save);
+  // Pre-fill the setup command with the extension's loaded path if we can
+  // resolve it (Chrome doesn't expose the unpacked path, but extension ID
+  // gives us a hint for users to find it).
+  const setupCmd = document.getElementById('setup-cmd');
+  if (setupCmd) {
+    setupCmd.textContent =
+      'cd <path-to-SendToClaudeExtension>\n' +
+      './setup.sh';
+  }
+
+  refresh();
+  document.getElementById('recheck').addEventListener('click', async () => {
+    const status = document.getElementById('recheck-status');
+    status.textContent = '';
+    await refresh();
+    status.textContent = 'Refreshed.';
+    setTimeout(() => { status.textContent = ''; }, 2000);
+  });
 });
