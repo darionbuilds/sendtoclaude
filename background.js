@@ -14,7 +14,7 @@
 //   6. KB: fetch KB PDF, call host ingest_kb.
 
 import {
-  fetchCase, fetchTask, fetchUserEmail,
+  fetchCase, fetchTask,
   listCaseAttachments, listTaskAttachments, listCaseTasks,
   fetchCasePdf, fetchTaskPdf, fetchAttachmentBlob, fetchKbPdf,
   rawVal, dispVal,
@@ -29,11 +29,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     try {
       if (msg.kind === "ingest") {
         const result = await handleIngestClick(msg, sender);
-        sendResponse(result);
-        return;
-      }
-      if (msg.kind === "ingest_reference_confirmed") {
-        const result = await handleIngestReference(msg, sender);
         sendResponse(result);
         return;
       }
@@ -69,6 +64,7 @@ function _ctxFromSender(sender, msg) {
 async function handleIngestClick(msg, sender) {
   const ctx = _ctxFromSender(sender, msg);
   const recordCtx = detectContext({ url: ctx.url, dom: msg.dom || {} });
+  const primaryCase = (msg.primaryCase || "").trim().toUpperCase();
 
   if (recordCtx.kind === "kb") {
     const result = await ingestKb(ctx, recordCtx);
@@ -82,32 +78,20 @@ async function handleIngestClick(msg, sender) {
     };
   }
 
+  // Routing decision is now driven by the prompt answer:
+  //   primaryCase === ""    → PRIMARY (download as your own case)
+  //   primaryCase === CSxxx → REFERENCE (file under entered parent)
+  if (primaryCase) {
+    if (!/^CS\d+$/.test(primaryCase)) {
+      return { ok: false, error: `Invalid primary case number: ${primaryCase}` };
+    }
+    const result = await ingestReference(ctx, recordCtx, primaryCase);
+    return { ok: true, mode: "reference", result };
+  }
+
   const { caseSysId, caseRecord, instance } = await resolveCase(ctx, recordCtx);
-  const decision = await decidePrimaryOrReference(ctx, caseRecord, instance);
-
-  if (decision.mode === "primary") {
-    const result = await ingestPrimary(ctx, instance, caseSysId, caseRecord);
-    return { ok: true, mode: "primary", result };
-  }
-
-  return {
-    ok: true,
-    mode: "reference_prompt",
-    suggested_primary: decision.suggested_primary,
-    case_number: dispVal(caseRecord.number),
-    reason: decision.reason,
-  };
-}
-
-async function handleIngestReference(msg, sender) {
-  const ctx = _ctxFromSender(sender, msg);
-  const recordCtx = detectContext({ url: ctx.url, dom: msg.dom || {} });
-  const primaryCase = (msg.primaryCase || "").trim().toUpperCase();
-  if (!/^CS\d+$/.test(primaryCase)) {
-    return { ok: false, error: `Invalid primary case number: ${msg.primaryCase}` };
-  }
-  const result = await ingestReference(ctx, recordCtx, primaryCase);
-  return { ok: true, mode: "reference", result };
+  const result = await ingestPrimary(ctx, instance, caseSysId, caseRecord);
+  return { ok: true, mode: "primary", result };
 }
 
 // --- Resolve case context ------------------------------------------------
@@ -126,50 +110,6 @@ async function resolveCase(ctx, recordCtx) {
     return { caseSysId: parentSysId, caseRecord, instance };
   }
   throw new Error(`resolveCase: unsupported kind '${recordCtx.kind}'`);
-}
-
-// --- Decide primary vs reference -----------------------------------------
-
-const CLOSED_STATES = new Set([
-  "solution proposed", "closed", "closed complete", "resolved", "cancelled",
-]);
-
-async function decidePrimaryOrReference(ctx, caseRecord, instance) {
-  let cfg;
-  try {
-    cfg = await readConfig();
-  } catch (e) {
-    return { mode: "reference", reason: `host_unavailable: ${e.message}` };
-  }
-
-  const ownerEmail = String(cfg.partner_tse_email || "").toLowerCase();
-  const assigned = caseRecord.assigned_to;
-  let assignedEmail = "";
-  if (assigned && typeof assigned === "object") {
-    if (typeof assigned.email === "string") {
-      assignedEmail = assigned.email.toLowerCase();
-    } else if (assigned.value) {
-      try {
-        assignedEmail = await fetchUserEmail(ctx, instance, assigned.value);
-      } catch (_) { /* leave blank */ }
-    }
-  }
-
-  const stateDisp = String(dispVal(caseRecord.state) || "").toLowerCase();
-  const isOwner = !!ownerEmail && !!assignedEmail && ownerEmail === assignedEmail;
-  const isClosed = CLOSED_STATES.has(stateDisp);
-
-  if (isOwner && !isClosed) {
-    return { mode: "primary", isOwner, isClosed };
-  }
-
-  return {
-    mode: "reference",
-    isOwner,
-    isClosed,
-    reason: isClosed ? "case_closed" : (isOwner ? "unknown" : "not_assigned_to_owner"),
-    suggested_primary: dispVal(caseRecord.number) || "",
-  };
 }
 
 // --- PRIMARY ingest pipeline ---------------------------------------------

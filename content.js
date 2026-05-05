@@ -38,7 +38,6 @@
     if (kbNumber && /^KB\d+$/i.test(kbNumber)) {
       return { kbNumber: kbNumber.toUpperCase() };
     }
-    // Try a couple of common DOM placements for KB number on the form.
     const candidates = [
       'sys_readonly.kb_knowledge.number',
       'kb_knowledge.number',
@@ -48,7 +47,6 @@
       const v = el?.value?.trim();
       if (v && /^KB\d+$/i.test(v)) return { kbNumber: v.toUpperCase() };
     }
-    // Heading text fallback (KB record-view page).
     const h = document.querySelector('h1, .form_action_buttons')?.textContent || '';
     const m = h.match(/\bKB\d+\b/);
     if (m) return { kbNumber: m[0].toUpperCase() };
@@ -87,6 +85,17 @@
 
   // ---- Click handler ---------------------------------------------------
 
+  function askForReferenceParent(currentCaseNum) {
+    // Always-on prompt: empty answer = treat as your own case.
+    // Non-empty answer = reference, filed under the entered parent case.
+    const message =
+      'Send to Claude\n\n' +
+      'If this is a reference case, enter the parent case number (e.g. CS1234567).\n' +
+      'Otherwise, leave blank and press Enter to download as your case' +
+      (currentCaseNum ? ` (${currentCaseNum}).` : '.');
+    return window.prompt(message, '');
+  }
+
   function onClick(btn) {
     const probe = pageProbe();
     if (probe.type === 'case_or_task' && (!probe.caseNum || !probe.sysId)) {
@@ -98,10 +107,30 @@
       return;
     }
 
+    let primaryCase = '';
+    if (probe.type === 'case_or_task') {
+      const answer = askForReferenceParent(probe.caseNum);
+      if (answer === null) {
+        // User cancelled the prompt; abort silently.
+        return;
+      }
+      const trimmed = answer.trim().toUpperCase();
+      if (trimmed && !/^CS\d+$/.test(trimmed)) {
+        alert(`Send to Claude: '${trimmed}' isn't a valid case number (expected CS<digits>).`);
+        return;
+      }
+      primaryCase = trimmed;
+    }
+
     setButtonState(btn, 'sending');
 
     chrome.runtime.sendMessage(
-      { kind: 'ingest', url: window.location.href, dom: probe },
+      {
+        kind: 'ingest',
+        url: window.location.href,
+        dom: probe,
+        primaryCase, // '' = primary, 'CSxxx' = reference under that parent
+      },
       (response) => {
         if (chrome.runtime.lastError) {
           showError(btn, chrome.runtime.lastError.message);
@@ -109,7 +138,6 @@
         }
         if (!response || !response.ok) {
           const err = (response && response.error) || 'Unknown error';
-          // Detect host-not-installed / setup needed cases for a softer state.
           if (/Native host not installed|setup\.sh|extension ID mismatch/.test(err)) {
             setButtonState(btn, 'setup');
             alert('Send to Claude — setup needed:\n\n' + err);
@@ -119,56 +147,6 @@
           return;
         }
 
-        if (response.mode === 'reference_prompt') {
-          handleReferencePrompt(btn, response, probe);
-          return;
-        }
-
-        // Success (primary, kb).
-        setButtonState(btn, 'ok');
-        setTimeout(() => setButtonState(btn, 'ready'), 4000);
-      }
-    );
-  }
-
-  function handleReferencePrompt(btn, response, probe) {
-    const suggested = response.suggested_primary || '';
-    const reasonText = response.reason === 'case_closed'
-      ? 'This case is in a closed/SP state; ingesting as reference.'
-      : (response.reason === 'not_assigned_to_owner'
-          ? 'This case is not assigned to you; ingesting as reference.'
-          : 'Ingesting as reference.');
-    const promptMsg =
-      reasonText + '\n\nWhich PRIMARY case is this a reference for?\n' +
-      '(Press OK to confirm — defaults to the same case for peer-overflow.)';
-    const primaryCase = window.prompt(promptMsg, suggested);
-    if (primaryCase === null) {
-      // User cancelled.
-      setButtonState(btn, 'ready');
-      return;
-    }
-    const trimmed = primaryCase.trim().toUpperCase();
-    if (!/^CS\d+$/.test(trimmed)) {
-      showError(btn, `Invalid primary case number: ${trimmed}`);
-      return;
-    }
-
-    chrome.runtime.sendMessage(
-      {
-        kind: 'ingest_reference_confirmed',
-        url: window.location.href,
-        dom: probe,
-        primaryCase: trimmed,
-      },
-      (response2) => {
-        if (chrome.runtime.lastError) {
-          showError(btn, chrome.runtime.lastError.message);
-          return;
-        }
-        if (!response2 || !response2.ok) {
-          showError(btn, (response2 && response2.error) || 'Unknown error');
-          return;
-        }
         setButtonState(btn, 'ok');
         setTimeout(() => setButtonState(btn, 'ready'), 4000);
       }
