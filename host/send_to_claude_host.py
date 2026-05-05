@@ -41,6 +41,26 @@ import traceback
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+# --- Debug log -----------------------------------------------------------
+# Chrome swallows the host's stderr when it reports "Native host has
+# exited" — there's no way to see what crashed. Mirror everything to
+# /tmp/send_to_claude_host.log so we have something to read.
+
+LOG_PATH = Path("/tmp/send_to_claude_host.log")
+
+
+def _log(msg: str) -> None:
+    try:
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            ts = datetime.now().isoformat(timespec="seconds")
+            f.write(f"[{ts}] {msg}\n")
+    except Exception:
+        pass
+
+
+def _log_exception(prefix: str, exc: BaseException) -> None:
+    _log(f"{prefix}: {exc}\n{traceback.format_exc()}")
+
 # Pacific TZ — handles PDT/PST transition correctly when zoneinfo is
 # available (Python ≥ 3.9). Falls back to fixed -07:00 otherwise.
 try:
@@ -52,18 +72,45 @@ except Exception:
 
 # --- Native messaging frame protocol -------------------------------------
 # Chrome native messaging: 4-byte little-endian length, then JSON body.
+# Outgoing messages capped at 1 MB by Chrome.
+
+def _read_exact(n: int) -> bytes:
+    """Read exactly n bytes from stdin, looping past short reads."""
+    buf = bytearray()
+    while len(buf) < n:
+        chunk = sys.stdin.buffer.read(n - len(buf))
+        if not chunk:
+            return bytes(buf)
+        buf.extend(chunk)
+    return bytes(buf)
+
 
 def _read_message():
-    raw_len = sys.stdin.buffer.read(4)
+    raw_len = _read_exact(4)
     if len(raw_len) < 4:
+        _log(f"_read_message: short header ({len(raw_len)} bytes)")
         return None
     msg_len = struct.unpack("<I", raw_len)[0]
-    body = sys.stdin.buffer.read(msg_len)
+    _log(f"_read_message: incoming length = {msg_len:,} bytes")
+    body = _read_exact(msg_len)
+    if len(body) < msg_len:
+        _log(f"_read_message: truncated body ({len(body):,} / {msg_len:,})")
+        return None
     return json.loads(body.decode("utf-8"))
 
 
 def _send_message(obj):
     body = json.dumps(obj, default=str).encode("utf-8")
+    if len(body) >= 1024 * 1024:
+        # Chrome's host→extension limit is 1 MB. Trim verbose fields so the
+        # caller still gets a meaningful reply instead of a hard crash.
+        _log(f"_send_message: response too large ({len(body):,} bytes); trimming")
+        if isinstance(obj, dict) and "result" in obj and isinstance(obj["result"], dict):
+            r = obj["result"]
+            for k in ("attachments", "tasks"):
+                if k in r and isinstance(r[k], list):
+                    r[k] = [{"_trimmed": True, "count": len(r[k])}]
+            body = json.dumps(obj, default=str).encode("utf-8")
     sys.stdout.buffer.write(struct.pack("<I", len(body)))
     sys.stdout.buffer.write(body)
     sys.stdout.buffer.flush()
@@ -674,31 +721,55 @@ OPS = {
 
 
 def main():
-    msg = _read_message()
+    _log("---- host invoked ----")
+    try:
+        msg = _read_message()
+    except Exception as e:
+        _log_exception("read_message failed", e)
+        try:
+            _send_message({"ok": False, "error": f"read_message: {e}"})
+        except Exception:
+            pass
+        return
     if msg is None:
         _send_message({"ok": False, "error": "no input"})
         return
     op = msg.get("op")
     payload = msg.get("payload", {}) or {}
+    _log(f"op={op}; payload top-level keys={list(payload.keys()) if isinstance(payload, dict) else type(payload)}")
+
     try:
         cfg = _read_config()
     except Exception as e:
+        _log_exception("config read failed", e)
         _send_message({"ok": False, "error": f"config error: {e}"})
         return
+
     handler = OPS.get(op)
     if not handler:
         _send_message({"ok": False, "error": f"unknown op: {op}"})
         return
+
     try:
         result = handler(cfg, payload)
         _send_message({"ok": True, "result": result})
+        _log(f"op={op} ok")
     except Exception as e:
-        _send_message({
-            "ok": False,
-            "error": str(e),
-            "trace": traceback.format_exc(),
-        })
+        _log_exception(f"op={op} handler failed", e)
+        try:
+            _send_message({
+                "ok": False,
+                "error": str(e),
+                "trace": traceback.format_exc(),
+            })
+        except Exception as e2:
+            _log_exception("failed to send error reply", e2)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BaseException as e:
+        _log_exception("top-level crash", e)
+        # Best-effort exit; Chrome already saw "host exited".
+        raise
