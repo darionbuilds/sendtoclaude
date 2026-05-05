@@ -238,6 +238,12 @@ def _read_tracker(case_dir: Path):
 
 def _parse_simple_yaml(s: str) -> dict:
     """Tolerant single-pass YAML parser for our flat tracker frontmatter shape."""
+    # Allowlist of keys that are always lists in our schema. When we see
+    # 'sessions:' / 'attachments:' / 'tasks:' with no value AND no items
+    # follow on subsequent indented lines, the key would otherwise be
+    # dropped from the parsed dict — which causes a re-emit (e.g. via
+    # _append_activity) to silently strip the line from the tracker.
+    KNOWN_LIST_KEYS = {"sessions", "attachments", "tasks"}
     out: dict = {}
     cur_list_key = None
     cur_obj_key = None
@@ -266,6 +272,10 @@ def _parse_simple_yaml(s: str) -> dict:
                     out[k] = {}
                 else:
                     cur_obj_key = None
+                    # Pre-register list-shaped keys so they survive
+                    # re-emit even when no items follow.
+                    if k in KNOWN_LIST_KEYS:
+                        out.setdefault(k, [])
             elif v == "[]":
                 # Inline empty list (common in the workspace's tracker
                 # template). Treat as a list, not the string "[]".
