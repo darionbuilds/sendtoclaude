@@ -2,21 +2,22 @@
 //
 // Responsibilities:
 //   1. Receive button-click messages from content.js with case context.
-//   2. Resolve the case record via SN REST (read-only, GET only).
+//   2. Resolve the case record via SN REST (read-only, GET only). All
+//      SN fetches are routed through chrome.scripting.executeScript
+//      against the same frame content.js injected into, so they inherit
+//      the user's HI session cookies.
 //   3. Decide primary vs reference based on partner_tse_email + case state.
-//   4. For PRIMARY: fetch case PDF + all attachments + all tasks (with their
-//      PDFs and attachments), bundle, call host ingest_case.
-//   5. For REFERENCE: ask content.js to prompt for primary case number,
-//      fetch the single record's PDF, call host ingest_reference.
-//   6. For KB: fetch KB PDF, call host ingest_kb.
-//
-// G1 invariant: only GET requests to ServiceNow. Enforced in lib/sn-api.js.
+//   4. PRIMARY: fetch case PDF + all attachments + all tasks (with their
+//      PDFs and attachments). Bundle, call host ingest_case.
+//   5. REFERENCE: ask content.js for primary case number, fetch single
+//      record PDF, call host ingest_reference.
+//   6. KB: fetch KB PDF, call host ingest_kb.
 
 import {
   fetchCase, fetchTask, fetchUserEmail,
   listCaseAttachments, listTaskAttachments, listCaseTasks,
   fetchCasePdf, fetchTaskPdf, fetchAttachmentBlob, fetchKbPdf,
-  arrayBufferToBase64, rawVal, dispVal,
+  rawVal, dispVal,
 } from "./lib/sn-api.js";
 import { callHost, ping, readConfig } from "./lib/messaging.js";
 import { detectContext } from "./lib/url-detect.js";
@@ -57,36 +58,38 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // --- Top-level click handler ---------------------------------------------
 
-async function handleIngestClick(msg, sender) {
-  // Prefer msg.url (the frame URL where content.js injected) over
-  // sender.tab.url (the top-level tab, which may be a workspace shell
-  // like /now/... that doesn't carry the sys_id).
-  const tabUrl = msg.url || sender?.tab?.url;
-  const ctx = detectContext({ url: tabUrl, dom: msg.dom || {} });
+function _ctxFromSender(sender, msg) {
+  return {
+    tabId: sender?.tab?.id,
+    frameId: sender?.frameId,
+    url: msg.url || sender?.tab?.url,
+  };
+}
 
-  if (ctx.kind === "kb") {
-    const result = await ingestKb(ctx);
+async function handleIngestClick(msg, sender) {
+  const ctx = _ctxFromSender(sender, msg);
+  const recordCtx = detectContext({ url: ctx.url, dom: msg.dom || {} });
+
+  if (recordCtx.kind === "kb") {
+    const result = await ingestKb(ctx, recordCtx);
     return { ok: true, mode: "kb", result };
   }
 
-  if (ctx.kind !== "case" && ctx.kind !== "task") {
+  if (recordCtx.kind !== "case" && recordCtx.kind !== "task") {
     return {
       ok: false,
-      error: `Send to Claude — not on a recognized case, task, or KB page (${ctx.kind}).`,
+      error: `Send to Claude — not on a recognized case, task, or KB page (${recordCtx.kind}).`,
     };
   }
 
-  // Case / task → resolve to parent case + decide primary vs reference.
-  const { caseSysId, caseRecord, instance } = await resolveCase(ctx);
-
-  const decision = await decidePrimaryOrReference(caseRecord, instance);
+  const { caseSysId, caseRecord, instance } = await resolveCase(ctx, recordCtx);
+  const decision = await decidePrimaryOrReference(ctx, caseRecord, instance);
 
   if (decision.mode === "primary") {
-    const result = await ingestPrimary(instance, caseSysId, caseRecord);
+    const result = await ingestPrimary(ctx, instance, caseSysId, caseRecord);
     return { ok: true, mode: "primary", result };
   }
 
-  // Reference mode → tell content.js to prompt for primary case.
   return {
     ok: true,
     mode: "reference_prompt",
@@ -97,35 +100,32 @@ async function handleIngestClick(msg, sender) {
 }
 
 async function handleIngestReference(msg, sender) {
-  // Prefer msg.url (the frame URL where content.js injected) over
-  // sender.tab.url (the top-level tab, which may be a workspace shell
-  // like /now/... that doesn't carry the sys_id).
-  const tabUrl = msg.url || sender?.tab?.url;
-  const ctx = detectContext({ url: tabUrl, dom: msg.dom || {} });
+  const ctx = _ctxFromSender(sender, msg);
+  const recordCtx = detectContext({ url: ctx.url, dom: msg.dom || {} });
   const primaryCase = (msg.primaryCase || "").trim().toUpperCase();
   if (!/^CS\d+$/.test(primaryCase)) {
     return { ok: false, error: `Invalid primary case number: ${msg.primaryCase}` };
   }
-  const result = await ingestReference(ctx, primaryCase);
+  const result = await ingestReference(ctx, recordCtx, primaryCase);
   return { ok: true, mode: "reference", result };
 }
 
 // --- Resolve case context ------------------------------------------------
 
-async function resolveCase(ctx) {
-  const instance = ctx.instance;
-  if (ctx.kind === "case") {
-    const caseRecord = await fetchCase(instance, ctx.sysId);
-    return { caseSysId: ctx.sysId, caseRecord, instance };
+async function resolveCase(ctx, recordCtx) {
+  const instance = recordCtx.instance;
+  if (recordCtx.kind === "case") {
+    const caseRecord = await fetchCase(ctx, instance, recordCtx.sysId);
+    return { caseSysId: recordCtx.sysId, caseRecord, instance };
   }
-  if (ctx.kind === "task") {
-    const t = await fetchTask(instance, ctx.sysId);
+  if (recordCtx.kind === "task") {
+    const t = await fetchTask(ctx, instance, recordCtx.sysId);
     const parentSysId = rawVal(t.parent);
     if (!parentSysId) throw new Error("Task has no parent case.");
-    const caseRecord = await fetchCase(instance, parentSysId);
+    const caseRecord = await fetchCase(ctx, instance, parentSysId);
     return { caseSysId: parentSysId, caseRecord, instance };
   }
-  throw new Error(`resolveCase: unsupported kind '${ctx.kind}'`);
+  throw new Error(`resolveCase: unsupported kind '${recordCtx.kind}'`);
 }
 
 // --- Decide primary vs reference -----------------------------------------
@@ -134,7 +134,7 @@ const CLOSED_STATES = new Set([
   "solution proposed", "closed", "closed complete", "resolved", "cancelled",
 ]);
 
-async function decidePrimaryOrReference(caseRecord, instance) {
+async function decidePrimaryOrReference(ctx, caseRecord, instance) {
   let cfg;
   try {
     cfg = await readConfig();
@@ -143,9 +143,6 @@ async function decidePrimaryOrReference(caseRecord, instance) {
   }
 
   const ownerEmail = String(cfg.partner_tse_email || "").toLowerCase();
-
-  // assigned_to.email may not be returned by sysparm_display_value=all.
-  // First try the display-value envelope; fall back to sys_user lookup.
   const assigned = caseRecord.assigned_to;
   let assignedEmail = "";
   if (assigned && typeof assigned === "object") {
@@ -153,7 +150,7 @@ async function decidePrimaryOrReference(caseRecord, instance) {
       assignedEmail = assigned.email.toLowerCase();
     } else if (assigned.value) {
       try {
-        assignedEmail = await fetchUserEmail(instance, assigned.value);
+        assignedEmail = await fetchUserEmail(ctx, instance, assigned.value);
       } catch (_) { /* leave blank */ }
     }
   }
@@ -177,56 +174,56 @@ async function decidePrimaryOrReference(caseRecord, instance) {
 
 // --- PRIMARY ingest pipeline ---------------------------------------------
 
-async function ingestPrimary(instance, caseSysId, caseRecord) {
+async function ingestPrimary(ctx, instance, caseSysId, caseRecord) {
   const caseNumber = dispVal(caseRecord.number);
   if (!caseNumber) throw new Error("Could not resolve case number from record.");
 
-  const casePdfBuf = await fetchCasePdf(instance, caseSysId);
+  const casePdf = await fetchCasePdf(ctx, instance, caseSysId);
   const casePackage = {
     filename: `${caseNumber}.pdf`,
-    content_type: "application/pdf",
-    base64: arrayBufferToBase64(casePdfBuf),
-    size: casePdfBuf.byteLength,
+    content_type: casePdf.contentType,
+    base64: casePdf.base64,
+    size: casePdf.size,
   };
 
-  const caseAttachMeta = await listCaseAttachments(instance, caseSysId);
+  const caseAttachMeta = await listCaseAttachments(ctx, instance, caseSysId);
   const caseAttachPackages = [];
   for (const a of caseAttachMeta) {
-    const { buffer, contentType } = await fetchAttachmentBlob(instance, a.sys_id);
+    const blob = await fetchAttachmentBlob(ctx, instance, a.sys_id);
     caseAttachPackages.push({
       sys_id: a.sys_id,
       file_name: a.file_name,
-      content_type: contentType,
-      size_bytes: a.size_bytes || buffer.byteLength,
-      base64: arrayBufferToBase64(buffer),
+      content_type: blob.contentType,
+      size_bytes: a.size_bytes || blob.size,
+      base64: blob.base64,
     });
   }
 
-  const taskList = await listCaseTasks(instance, caseSysId);
+  const taskList = await listCaseTasks(ctx, instance, caseSysId);
   const taskPackages = [];
   for (const t of taskList) {
     let pdfPkg = null;
     try {
-      const buf = await fetchTaskPdf(instance, t.sys_id);
+      const tp = await fetchTaskPdf(ctx, instance, t.sys_id);
       pdfPkg = {
         filename: `${t.number}.pdf`,
-        content_type: "application/pdf",
-        base64: arrayBufferToBase64(buf),
-        size: buf.byteLength,
+        content_type: tp.contentType,
+        base64: tp.base64,
+        size: tp.size,
       };
     } catch (e) {
       console.warn("[send-to-claude] task PDF fetch failed", t.number, e.message);
     }
-    const tAttachMeta = await listTaskAttachments(instance, t.sys_id);
+    const tAttachMeta = await listTaskAttachments(ctx, instance, t.sys_id);
     const tAttachPackages = [];
     for (const a of tAttachMeta) {
-      const { buffer, contentType } = await fetchAttachmentBlob(instance, a.sys_id);
+      const blob = await fetchAttachmentBlob(ctx, instance, a.sys_id);
       tAttachPackages.push({
         sys_id: a.sys_id,
         file_name: a.file_name,
-        content_type: contentType,
-        size_bytes: a.size_bytes || buffer.byteLength,
-        base64: arrayBufferToBase64(buffer),
+        content_type: blob.contentType,
+        size_bytes: a.size_bytes || blob.size,
+        base64: blob.base64,
       });
     }
     taskPackages.push({
@@ -250,67 +247,52 @@ async function ingestPrimary(instance, caseSysId, caseRecord) {
 
 // --- REFERENCE ingest pipeline -------------------------------------------
 
-async function ingestReference(ctx, primaryCaseNumber) {
-  const instance = ctx.instance;
+async function ingestReference(ctx, recordCtx, primaryCaseNumber) {
+  const instance = recordCtx.instance;
 
-  if (ctx.kind === "case") {
-    const c = await fetchCase(instance, ctx.sysId);
+  if (recordCtx.kind === "case") {
+    const c = await fetchCase(ctx, instance, recordCtx.sysId);
     const number = dispVal(c.number);
-    const buf = await fetchCasePdf(instance, ctx.sysId);
+    const r = await fetchCasePdf(ctx, instance, recordCtx.sysId);
     return await callHost("ingest_reference", {
       instance,
       primary_case: primaryCaseNumber,
       reference: {
         kind: "case_pdf",
         reference_case_number: number,
-        file: {
-          filename: `${number}.pdf`,
-          content_type: "application/pdf",
-          base64: arrayBufferToBase64(buf),
-          size: buf.byteLength,
-        },
+        file: { filename: `${number}.pdf`, content_type: r.contentType, base64: r.base64, size: r.size },
       },
       fetched_at: new Date().toISOString(),
     }, { timeoutMs: 300000 });
   }
 
-  if (ctx.kind === "task") {
-    const t = await fetchTask(instance, ctx.sysId);
+  if (recordCtx.kind === "task") {
+    const t = await fetchTask(ctx, instance, recordCtx.sysId);
     const number = t.number;
-    const buf = await fetchTaskPdf(instance, ctx.sysId);
+    const r = await fetchTaskPdf(ctx, instance, recordCtx.sysId);
     return await callHost("ingest_reference", {
       instance,
       primary_case: primaryCaseNumber,
       reference: {
         kind: "task_pdf",
         reference_case_number: number,
-        file: {
-          filename: `${number}.pdf`,
-          content_type: "application/pdf",
-          base64: arrayBufferToBase64(buf),
-          size: buf.byteLength,
-        },
+        file: { filename: `${number}.pdf`, content_type: r.contentType, base64: r.base64, size: r.size },
       },
       fetched_at: new Date().toISOString(),
     }, { timeoutMs: 300000 });
   }
 
-  throw new Error(`ingestReference: unsupported kind '${ctx.kind}'`);
+  throw new Error(`ingestReference: unsupported kind '${recordCtx.kind}'`);
 }
 
 // --- KB ingest -----------------------------------------------------------
 
-async function ingestKb(ctx) {
-  const buf = await fetchKbPdf(ctx.instance, ctx.sysId || ctx.number);
+async function ingestKb(ctx, recordCtx) {
+  const r = await fetchKbPdf(ctx, recordCtx.instance, recordCtx.sysId || recordCtx.number);
   return await callHost("ingest_kb", {
-    instance: ctx.instance,
-    number: ctx.number,
-    file: {
-      filename: `${ctx.number}.pdf`,
-      content_type: "application/pdf",
-      base64: arrayBufferToBase64(buf),
-      size: buf.byteLength,
-    },
+    instance: recordCtx.instance,
+    number: recordCtx.number,
+    file: { filename: `${recordCtx.number}.pdf`, content_type: r.contentType, base64: r.base64, size: r.size },
     fetched_at: new Date().toISOString(),
   }, { timeoutMs: 120000 });
 }
