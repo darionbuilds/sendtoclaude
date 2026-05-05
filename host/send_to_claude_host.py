@@ -188,7 +188,12 @@ def _run_parser(pdf_path: Path, since: str | None = None) -> dict:
             f"Bundled parser not found at {BUNDLED_PARSER}. "
             "The extension repo is incomplete."
         )
-    cmd = ["python3", str(BUNDLED_PARSER), str(pdf_path)]
+    # IMPORTANT: use sys.executable, NOT bare "python3". The host runs under
+    # the absolute python3 path the launcher hands it, which is also the
+    # Python where pdfplumber was pip-installed. A bare "python3" argv would
+    # resolve against Chrome's sanitized PATH and may pick a different
+    # Python (e.g. Apple's /usr/bin/python3) that doesn't have pdfplumber.
+    cmd = [sys.executable, str(BUNDLED_PARSER), str(pdf_path)]
     if since:
         cmd += ["--since", since]
     try:
