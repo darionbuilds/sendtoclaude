@@ -261,6 +261,16 @@ def _parse_simple_yaml(s: str) -> dict:
                     out[k] = {}
                 else:
                     cur_obj_key = None
+            elif v == "[]":
+                # Inline empty list (common in the workspace's tracker
+                # template). Treat as a list, not the string "[]".
+                out[k] = []
+                cur_list_key = None
+                cur_obj_key = None
+            elif v == "{}":
+                out[k] = {}
+                cur_list_key = None
+                cur_obj_key = None
             else:
                 out[k] = _coerce_scalar(_unquote(v))
                 cur_list_key = None
@@ -567,6 +577,8 @@ def op_ingest_case(cfg, payload):
     front["has_work_notes"] = bool(case_parsed.get("has_work_notes"))
 
     sessions = front.get("sessions") or []
+    if not isinstance(sessions, list):
+        sessions = []
     if is_first_pull and not sessions:
         sessions = [{"id": case_number, "started": _iso_pacific()}]
     front["sessions"] = sessions
@@ -580,7 +592,12 @@ def op_ingest_case(cfg, payload):
     # Attachments: merge by sys_id; mark removed_from_source on missing.
     live_sids = {a["sys_id"] for a in (payload.get("attachments") or [])}
     merged: dict = {}
-    for a in (front.get("attachments") or []):
+    existing_attachments = front.get("attachments") or []
+    if not isinstance(existing_attachments, list):
+        existing_attachments = []
+    for a in existing_attachments:
+        if not isinstance(a, dict):
+            continue
         sid = a.get("sys_id")
         if sid:
             merged[sid] = a
@@ -600,7 +617,12 @@ def op_ingest_case(cfg, payload):
 
     # Tasks: same merge pattern.
     task_merged: dict = {}
-    for t in (front.get("tasks") or []):
+    existing_tasks = front.get("tasks") or []
+    if not isinstance(existing_tasks, list):
+        existing_tasks = []
+    for t in existing_tasks:
+        if not isinstance(t, dict):
+            continue
         sid = t.get("sys_id")
         if sid:
             task_merged[sid] = t
