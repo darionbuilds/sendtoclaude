@@ -671,11 +671,18 @@ def op_ingest_reference(cfg, payload):
     ref_number = ref.get("reference_case_number") or "REF"
     f = ref["file"]
     orig = f["filename"]
+    suffix = Path(orig).suffix  # ".pdf", ".txt", etc.
     upper_orig = orig.upper()
     upper_ref = ref_number.upper()
-    if upper_orig.startswith(upper_ref):
-        rest = orig[len(ref_number):].lstrip("-_. ")
-        out_name = f"{ref_number}-{rest}" if rest else f"{ref_number}{Path(orig).suffix}"
+    if upper_orig == f"{upper_ref}{suffix.upper()}":
+        # Filename is already exactly "<refnum>.<ext>" — keep as-is.
+        out_name = orig
+    elif upper_orig.startswith(upper_ref):
+        # Filename has the refnum prefix plus extra content.
+        # Strip a single leading separator (-, _, space) but NOT '.' so we
+        # never eat the file extension.
+        rest = orig[len(ref_number):].lstrip("-_ ")
+        out_name = f"{ref_number}-{rest}" if rest else f"{ref_number}{suffix}"
     else:
         out_name = f"{ref_number}-{orig}"
     dst = refs_dir / out_name
