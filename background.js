@@ -58,7 +58,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // --- Top-level click handler ---------------------------------------------
 
 async function handleIngestClick(msg, sender) {
-  const tabUrl = sender?.tab?.url || msg.url;
+  // Prefer msg.url (the frame URL where content.js injected) over
+  // sender.tab.url (the top-level tab, which may be a workspace shell
+  // like /now/... that doesn't carry the sys_id).
+  const tabUrl = msg.url || sender?.tab?.url;
   const ctx = detectContext({ url: tabUrl, dom: msg.dom || {} });
 
   if (ctx.kind === "kb") {
@@ -94,7 +97,10 @@ async function handleIngestClick(msg, sender) {
 }
 
 async function handleIngestReference(msg, sender) {
-  const tabUrl = sender?.tab?.url || msg.url;
+  // Prefer msg.url (the frame URL where content.js injected) over
+  // sender.tab.url (the top-level tab, which may be a workspace shell
+  // like /now/... that doesn't carry the sys_id).
+  const tabUrl = msg.url || sender?.tab?.url;
   const ctx = detectContext({ url: tabUrl, dom: msg.dom || {} });
   const primaryCase = (msg.primaryCase || "").trim().toUpperCase();
   if (!/^CS\d+$/.test(primaryCase)) {
