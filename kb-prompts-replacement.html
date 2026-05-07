@@ -1,15 +1,21 @@
-<p><em>Run <code>setup.sh</code> before using these prompts &mdash; it handles all file placement automatically, including cloning the ServiceNow documentation library into <code>md/ServiceNowDocs/</code>. These prompts cover the personalization steps that follow: substituting your name into templates, building your product doc index, and customizing your skills.</em></p>
+<p><em>Run <code>setup.sh</code> before using these prompts &mdash; it handles all file placement automatically. These prompts cover the personalization steps that follow: substituting your name into templates, building your product doc index, and customizing your skills.</em></p>
+<hr style="border: 1px solid #d3d3d3; margin: 20px 0;">
+<p><strong>Optional &mdash; ServiceNow Documentation Library</strong></p>
+<p><em>Clone the LLM-optimized ServiceNow documentation into your workspace. Once cloned, Prompt 2 below will index it automatically alongside any other files you add to <code>md/</code>. Run once; re-run to pull updates.</em></p>
+<pre style="background-color: #f4f4f4; border-left: 3px solid #0078d4; padding: 12px; font-family: 'Courier New', monospace; font-size: 12px; white-space: pre-wrap; overflow-wrap: break-word; margin: 0 0 16px 0;">git clone https://github.com/ServiceNow/ServiceNowDocs.git ~/my-claude-workspace/md/ServiceNowDocs</pre>
 <hr style="border: 1px solid #d3d3d3; margin: 20px 0;">
 <p><strong>Prompt 1 &mdash; Workspace Scaffold</strong></p>
-<p><em>Use immediately after running <code>setup.sh</code>. Your template files are already in <code>prompts/</code> and your docs are in <code>md/ServiceNowDocs/</code> &mdash; this prompt substitutes your name into the templates and adds the required rules to CLAUDE.md.</em></p>
+<p><em>Use immediately after running <code>setup.sh</code>. Your template files are already in <code>prompts/</code> &mdash; this prompt substitutes your name and adds the required rules to CLAUDE.md.</em></p>
 <pre style="background-color: #f4f4f4; border-left: 3px solid #0078d4; padding: 12px; font-family: 'Courier New', monospace; font-size: 12px; white-space: pre-wrap; overflow-wrap: break-word; margin: 0 0 16px 0;">I'm setting up a Claude Code workspace for ServiceNow TSE casework. Please complete the following steps automatically:
 
-1. Ask me for my name. Then read the following files from my prompts/ directory and rewrite each one in place, replacing every instance of [Your Name] with the name I provide:
+1. Create the md/ directory inside my workspace root if it doesn't already exist.
+
+2. Ask me for my name. Then read the following files from my prompts/ directory and rewrite each one in place, replacing every instance of [Your Name] with the name I provide:
    - prompts/MFR_GENERIC.txt
    - prompts/SP_GENERIC.txt
    - prompts/DEV-TASK_GENERIC.txt
 
-2. Open my CLAUDE.md and add the following two rules under a new section called "Workspace Extensions":
+3. Open my CLAUDE.md and add the following two rules under a new section called "Workspace Extensions":
    - Lookup priority: Before answering any product question, check md/_index.md first. Only perform a web search if the topic is not covered in md/.
    - Template compliance: Before generating any customer-facing email (MFR or SP), read the relevant template file from prompts/ and follow it exactly &mdash; no added sections, no alternate tag formatting.
 

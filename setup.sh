@@ -127,22 +127,6 @@ else
     note "skills.zip not found in workspace root — skipping"
 fi
 
-SN_DOCS_DIR="$WORKSPACE_DEFAULT/md/ServiceNowDocs"
-mkdir -p "$WORKSPACE_DEFAULT/md"
-if [[ -d "$SN_DOCS_DIR/.git" ]]; then
-    ok "ServiceNow docs already cloned at md/ServiceNowDocs/ (skipped)"
-elif ! command -v git >/dev/null 2>&1; then
-    note "git not found — skipping ServiceNow docs clone. Install git and re-run setup.sh."
-else
-    printf "  Cloning ServiceNow documentation (this may take a moment)...\n"
-    if git clone https://github.com/ServiceNow/ServiceNowDocs.git "$SN_DOCS_DIR" \
-        >/tmp/send_to_claude_docs.log 2>&1; then
-        ok "Cloned ServiceNow docs → md/ServiceNowDocs/"
-    else
-        note "git clone failed. See /tmp/send_to_claude_docs.log — re-run setup.sh once network access is available."
-    fi
-fi
-
 # --- 5. Detect extension ID ----------------------------------------------
 printf "\nDetecting extension ID...\n"
 
