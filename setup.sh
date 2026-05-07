@@ -1,21 +1,24 @@
 #!/usr/bin/env bash
-# setup.sh — one-command installer for the Send to Claude extension.
+# setup.sh — one-command workspace + extension installer.
 #
 # What it does:
 #   1. Verifies Python 3 is available.
 #   2. Verifies the Claude workspace is set up (KB2948102). Bails if not.
-#   3. Auto-detects the unpacked extension ID by scanning Chrome's profile
+#   3. Moves MFR_GENERIC.txt, SP_GENERIC.txt, DEV-TASK_GENERIC.txt from the
+#      workspace root into workspace/prompts/.
+#   4. Extracts skills.zip from the workspace root into workspace/.claude/skills/.
+#   5. Auto-detects the unpacked extension ID by scanning Chrome's profile
 #      Preferences files. Falls back to interactive prompt.
-#   4. Installs pdfplumber via pip (--user, no sudo).
-#   5. Writes the native messaging host manifest into Chrome's (and
+#   6. Creates an isolated Python venv at host/.venv/ and installs pdfplumber.
+#   7. Writes the native messaging host manifest into Chrome's (and
 #      Chromium / Edge if present) NativeMessagingHosts dir, with the
 #      absolute host path and the extension ID substituted in.
-#   6. Smoke-tests the host with a ping.
+#   8. Smoke-tests the host with a ping.
 #
 # What it deliberately does NOT do:
-#   - Touch ~/my-claude-workspace/ in any way.
 #   - Run as root.
 #   - Modify Chrome settings.
+#   - Create or modify the workspace itself (KB2948102 does that).
 
 set -euo pipefail
 
@@ -90,7 +93,41 @@ EOF
 fi
 ok "Bundled parser at host/parser.py"
 
-# --- 4. Detect extension ID ----------------------------------------------
+# --- 4. Workspace setup --------------------------------------------------
+printf "\nSetting up workspace files...\n"
+PROMPTS_DIR="$WORKSPACE_DEFAULT/prompts"
+mkdir -p "$PROMPTS_DIR"
+
+for tmpl in MFR_GENERIC.txt SP_GENERIC.txt DEV-TASK_GENERIC.txt; do
+    src="$WORKSPACE_DEFAULT/$tmpl"
+    dst="$PROMPTS_DIR/$tmpl"
+    if [[ -f "$src" ]]; then
+        mv "$src" "$dst"
+        ok "Moved $tmpl → prompts/"
+    elif [[ -f "$dst" ]]; then
+        ok "$tmpl already in prompts/ (skipped)"
+    else
+        note "$tmpl not found in workspace root — skipping"
+    fi
+done
+
+SKILLS_ZIP="$WORKSPACE_DEFAULT/skills.zip"
+SKILLS_DIR="$WORKSPACE_DEFAULT/.claude/skills"
+if [[ -f "$SKILLS_ZIP" ]]; then
+    mkdir -p "$SKILLS_DIR"
+    if unzip -o "$SKILLS_ZIP" -d "$SKILLS_DIR" >/tmp/send_to_claude_skills.log 2>&1; then
+        ok "Extracted skills.zip → .claude/skills/"
+    else
+        fail "Failed to extract skills.zip. See /tmp/send_to_claude_skills.log"
+        exit 1
+    fi
+elif [[ -d "$SKILLS_DIR" ]] && [[ -n "$(ls -A "$SKILLS_DIR" 2>/dev/null)" ]]; then
+    ok ".claude/skills/ already populated (skipped)"
+else
+    note "skills.zip not found in workspace root — skipping"
+fi
+
+# --- 5. Detect extension ID ----------------------------------------------
 printf "\nDetecting extension ID...\n"
 
 case "$(uname -s)" in
@@ -152,7 +189,7 @@ if [[ ! "$EXT_ID" =~ ^[a-p]{32}$ ]]; then
 fi
 ok "Extension ID: $EXT_ID"
 
-# --- 5. Python deps (isolated venv) -------------------------------------
+# --- 6. Python deps (isolated venv) -------------------------------------
 # Python 3.12+ (Homebrew and many distros) marks the system environment as
 # "externally managed" (PEP 668) and rejects --user pip installs. We side-
 # step that by keeping an isolated venv inside the repo at host/.venv/.
@@ -179,7 +216,7 @@ else
     fi
 fi
 
-# --- 6. Generate launcher wrapper ---------------------------------------
+# --- 7. Generate launcher wrapper ---------------------------------------
 # Chrome on macOS spawns native messaging hosts in a sanitized environment
 # that often doesn't include /opt/homebrew/bin or /usr/local/bin in PATH,
 # so '#!/usr/bin/env python3' fails to resolve and the host process dies
@@ -195,7 +232,7 @@ EOF_LAUNCHER
 chmod +x "$LAUNCHER"
 ok "Wrote launcher: $LAUNCHER (python3=$VENV_PY)"
 
-# --- 7. Install native messaging manifest --------------------------------
+# --- 8. Install native messaging manifest --------------------------------
 printf "\nInstalling native messaging manifest...\n"
 
 chmod +x "$HOST_BIN"
@@ -242,7 +279,7 @@ write_manifest "$CHROME_NMH"
 [[ -d "$(dirname "$CHROMIUM_NMH")" ]] && write_manifest "$CHROMIUM_NMH" || true
 [[ -d "$(dirname "$EDGE_NMH")" ]]     && write_manifest "$EDGE_NMH"     || true
 
-# --- 8. Smoke test -------------------------------------------------------
+# --- 9. Smoke test -------------------------------------------------------
 # Smoke-test through the launcher (not the .py directly) so we exercise
 # exactly what Chrome will spawn.
 printf "\nSmoke test...\n"

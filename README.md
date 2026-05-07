@@ -23,7 +23,7 @@ If the workspace isn't set up, `setup.sh` will tell you and stop.
    ```bash
    ./setup.sh
    ```
-   The script auto-detects your extension ID, installs `pdfplumber`, writes the native messaging manifest, and smoke-tests the host. It will not modify your workspace.
+   The script auto-detects your extension ID, creates an isolated Python venv at `host/.venv/`, installs `pdfplumber` into it, writes the native messaging manifest, and smoke-tests the host. It will not modify your workspace.
 4. **Reload the extension** in `chrome://extensions/` so the new permissions take effect.
 5. **Verify:** right-click the extension icon → Options. The Status card should show **Host: ok ✓** with your workspace path and partner TSE email.
 

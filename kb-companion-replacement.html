@@ -1,0 +1,33 @@
+<p><strong>Prerequisite:</strong> Complete KB2948102 first. Your workspace at <code>~/my-claude-workspace/</code> must exist and be configured before running the installer below.</p>
+
+<p><strong>Step 1 &mdash; Place attachment files in your workspace root</strong></p>
+<p>Download all attachments from this article and move them into <code>~/my-claude-workspace/</code>:</p>
+<p><code>MFR_GENERIC.txt</code> &nbsp; <code>SP_GENERIC.txt</code> &nbsp; <code>DEV-TASK_GENERIC.txt</code> &nbsp; <code>skills.zip</code> &nbsp; <code>SendToClaudeExtension.zip</code></p>
+
+<p><strong>Step 2 &mdash; Load the extension in Chrome</strong></p>
+<ol>
+<li>Extract <code>SendToClaudeExtension.zip</code> inside your workspace root. The resulting folder (<code>~/my-claude-workspace/SendToClaudeExtension/</code>) is the extension's permanent home &mdash; do not move it after loading.</li>
+<li>Open <code>chrome://extensions</code>, enable <strong>Developer mode</strong> (top-right toggle), click <strong>Load unpacked</strong>, and select the <code>SendToClaudeExtension</code> folder.</li>
+</ol>
+
+<p><strong>Step 3 &mdash; Run the installer</strong></p>
+<p>In Terminal, run:</p>
+<pre><code>~/my-claude-workspace/SendToClaudeExtension/setup.sh</code></pre>
+<p>The installer moves your template files into <code>prompts/</code>, extracts skills into <code>.claude/skills/</code>, configures the Chrome native messaging host, and smoke-tests the connection. When it finishes with <strong>Setup complete</strong>, everything is ready.</p>
+
+<p><strong>Step 4 &mdash; Verify</strong></p>
+<ol>
+<li>Reload the extension in <code>chrome://extensions/</code>.</li>
+<li>Right-click the extension icon &rarr; <strong>Options</strong>. The Status card should show <strong>Host: ok &#10003;</strong> with your workspace path.</li>
+<li>Open any ServiceNow case or task. The <strong>Send to Claude</strong> button appears in the navbar. Clicking it ingests the record into <code>cases/CS&lt;n&gt;/</code> inside your workspace &mdash; PDF, attachments, tasks, and a populated <code>tracker.md</code>.</li>
+</ol>
+
+<div style="background-color: #f0f7ff; border-left: 3px solid #0078d4; padding: 12px; margin: 16px 0;">
+<p><strong>Tip &mdash; Name sessions by case number for easy resume</strong></p>
+<ol>
+<li><strong>Start a session for a case:</strong> Launch Claude Code from your workspace, then run <code>/rename CS0000000</code> (replace with your case number).</li>
+<li><strong>Alternatively, name it at launch:</strong> From Terminal, run <code>claude --name CS0000000</code>.</li>
+<li><strong>Resume a case session later:</strong> From Terminal, run <code>claude --resume</code> &mdash; select your case number to pick up exactly where you left off.</li>
+</ol>
+<p>Most case investigations span multiple sittings. Naming sessions by case number keeps your work organized and eliminates re-explaining the situation each time you return.</p>
+</div>
