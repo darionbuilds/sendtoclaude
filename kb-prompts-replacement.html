@@ -1,0 +1,35 @@
+<p><em>Run <code>setup.sh</code> before using these prompts &mdash; it handles all file placement automatically. These prompts cover the personalization steps that follow: substituting your name into templates, building your product doc index, and customizing your skills.</em></p>
+<hr style="border: 1px solid #d3d3d3; margin: 20px 0;">
+<p><strong>Prompt 1 &mdash; Workspace Scaffold</strong></p>
+<p><em>Use immediately after running <code>setup.sh</code>. Your template files are already in <code>prompts/</code> &mdash; this prompt substitutes your name and adds the required rules to CLAUDE.md.</em></p>
+<pre style="background-color: #f4f4f4; border-left: 3px solid #0078d4; padding: 12px; font-family: 'Courier New', monospace; font-size: 12px; white-space: pre-wrap; overflow-wrap: break-word; margin: 0 0 16px 0;">I'm setting up a Claude Code workspace for ServiceNow TSE casework. Please complete the following steps automatically:
+
+1. Create the md/ directory inside my workspace root if it doesn't already exist.
+
+2. Ask me for my name. Then read the following files from my prompts/ directory and rewrite each one in place, replacing every instance of [Your Name] with the name I provide:
+   - prompts/MFR_GENERIC.txt
+   - prompts/SP_GENERIC.txt
+   - prompts/DEV-TASK_GENERIC.txt
+
+3. Open my CLAUDE.md and add the following two rules under a new section called "Workspace Extensions":
+   - Lookup priority: Before answering any product question, check md/_index.md first. Only perform a web search if the topic is not covered in md/.
+   - Template compliance: Before generating any customer-facing email (MFR or SP), read the relevant template file from prompts/ and follow it exactly &mdash; no added sections, no alternate tag formatting.
+
+Confirm each step as it completes.</pre>
+<hr style="border: 1px solid #d3d3d3; margin: 20px 0;">
+<p><strong>Prompt 2 &mdash; md/ Index Builder</strong></p>
+<p><em>Use after manually placing product documentation files in the md/ directory. Claude will generate the index and flag coverage gaps.</em></p>
+<pre style="background-color: #f4f4f4; border-left: 3px solid #0078d4; padding: 12px; font-family: 'Courier New', monospace; font-size: 12px; white-space: pre-wrap; overflow-wrap: break-word; margin: 0 0 16px 0;">I've added product documentation files to the md/ directory in my Claude Code workspace. Please:
+
+1. Read every file currently in md/ &mdash; skip _index.md if it already exists
+2. For each file, identify the products, features, and topics it covers
+3. Write md/_index.md as a markdown table with three columns: Product/Topic | File | Key Line Ranges &mdash; give a separate row per distinct product with the line range where that product's content begins and ends, specific enough to open directly
+4. After writing the index, give me a one-line summary of what each file covers and flag any topics a ServiceNow TSE would expect to reference that aren't represented</pre>
+<hr style="border: 1px solid #d3d3d3; margin: 20px 0;">
+<p><strong>Prompt 3 &mdash; Skills Customization</strong></p>
+<p><em>Use after running <code>setup.sh</code>, which has already extracted your skills into <code>.claude/skills/</code>. Complete Prompt 1 first so templates are in place. This prompt personalizes the skills with your details.</em></p>
+<pre style="background-color: #f4f4f4; border-left: 3px solid #0078d4; padding: 12px; font-family: 'Courier New', monospace; font-size: 12px; white-space: pre-wrap; overflow-wrap: break-word; margin: 0 0 16px 0;">My skills have already been extracted into .claude/skills/. Please:
+
+1. Read all skill files in .claude/skills/
+2. Ask me for the details needed to personalize them &mdash; my name, squad, product areas, and anything else you identify as engineer-specific
+3. Once I confirm those details, update each skill file accordingly and let me know what changed</pre>
