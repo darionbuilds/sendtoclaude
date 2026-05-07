@@ -13,3 +13,6 @@ host/launcher.sh
 __pycache__/
 *.pyc
 .Python
+
+# Virtual environment created by setup.sh
+host/.venv/
